@@ -217,7 +217,8 @@
         '<div class="fx-row" style="margin-top:10px"><div class="field-label">Modo</div><select id="live-variant">' +
         Object.entries(live.variants).map(([k, v]) => '<option value="' + k + '"' + (k === set.ai.meanvc_variant ? ' selected' : '') + '>' + VL.esc(v) + '</option>').join('') +
         '</select></div>' + qualityHTML() +
-        (live.hd ? '<label class="checkbox" style="margin-top:8px" title="AP-BWE reconstruye los agudos (de 16 kHz a 48 kHz): voz más nítida y con más aire. Usa algo más de CPU y añade ~25 ms."><input type="checkbox" id="q-hd"' + (set.ai.meanvc_hd ? ' checked' : '') + '><span>Alta definición 48 kHz</span></label>'
+        (live.hd ? '<label class="checkbox" style="margin-top:8px" title="AP-BWE reconstruye los agudos (de 16 kHz a 48 kHz): voz más nítida y con más aire. Usa algo más de CPU y añade ~25 ms."><input type="checkbox" id="q-hd"' + (set.ai.meanvc_hd ? ' checked' : '') + '><span>Alta definición 48 kHz</span></label>' +
+          (live.bench_hd ? '<div class="small muted">' + VL.esc(benchText(live.bench_hd)) + (live.bench_hd.rtf >= 0.85 ? ' Se usa la calidad normal para no entrecortar.' : '') + '</div>' : '')
           : '<div class="small muted" style="margin-top:8px">Alta definición 48 kHz (más nitidez): <button class="link" id="q-hd-get">descargar ' + live.hd_mb + ' MB</button></div>') +
         '<div id="live-status" style="margin-top:10px"></div>' +
         '<div class="field-hint" style="margin-top:8px">Conversión sin entrenamiento a partir de la referencia del perfil. Se parece menos que una voz RVC entrenada y el modelo se entrenó sobre todo con inglés y chino: en español la pronunciación puede sonar menos natural. La primera vez con cada voz tarda unos segundos más (calcula su huella).</div>';

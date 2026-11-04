@@ -1,4 +1,4 @@
-# VoiceLab AI · v0.7.0
+# VoiceLab AI · v0.8.0
 
 Estudio de voz para Windows 10/11: modulador en tiempo real con micrófono virtual, efectos, clonación de voz con IA local, conversión de voz en directo (RVC y voz instantánea sin entrenar), texto a voz, editor de audio y biblioteca de perfiles. Sin suscripciones: todo se ejecuta en tu equipo.
 
@@ -41,6 +41,14 @@ Para hablar en directo con una voz de la que solo tienes ~30 s (un perfil creado
 Cómo funciona: un proceso aparte (PyTorch no entra en la app ni compite con el audio) recibe bloques de 160 ms a 16 kHz y devuelve la voz convertida. Modos *Calidad* (120 ms) y *Baja latencia* (40 ms). Latencia total orientativa: 300–450 ms.
 
 Límites honestos: es conversión *zero-shot*, se parece menos que un modelo RVC entrenado con esa voz; el modelo se entrenó sobre todo con inglés y chino, así que en español la pronunciación puede sonar menos natural; solo usa la CPU. No se ha podido probar con los modelos reales en el entorno de desarrollo (sin acceso a Hugging Face/PyPI); la lógica alrededor está probada con un proceso simulado. Úsalo solo con voces propias o con autorización.
+
+### Calidad de la voz de IA en directo (v0.8)
+
+- **Limpiar mi voz antes de convertir** (por defecto): paso alto y reducción de ruido suave antes del modelo.
+- **Acabado de estudio** (por defecto): control de eses, compresión suave, presencia y volumen constante a la salida, como en una voz producida.
+- **Alta definición 48 kHz** (voz instantánea): MeanVC2 sale a 16 kHz; [AP-BWE](https://github.com/yxlu-0102/AP-BWE) (MIT) reconstruye los agudos hasta 48 kHz. Descarga de 120 MB desde el Google Drive del autor, con SHA-256. Se mide al instalar y solo se usa si la CPU lo aguanta. Comprobado en Windows: la voz se sigue entendiendo igual (Whisper 99 %).
+
+Límite honesto: los servicios como ElevenLabs usan modelos enormes en servidores; en directo y con la CPU de casa no se puede igualar del todo. Estas mejoras acercan el resultado en nitidez y acabado.
 
 ## Voces RVC en directo
 

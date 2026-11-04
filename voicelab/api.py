@@ -803,7 +803,9 @@ class AIApiMixin:
         else:
             from .ai import meanvc
             variant = self._settings.get("ai", "meanvc_variant")
-            hd = bool(self._settings.get("ai", "meanvc_hd")) and meanvc.hd_installed()
+            bh = meanvc.bench_hd() or {}
+            # La alta definición solo si este PC la aguanta (medido al instalar): si no, entrecortaría.
+            hd = bool(self._settings.get("ai", "meanvc_hd")) and meanvc.hd_installed() and bh.get("rtf", 1.0) < 0.85
             cur = self._engine.ai
             inner = getattr(cur, "inner", cur)
             if (isinstance(inner, meanvc.RealtimeMeanVC) and inner.variant == variant and inner.sr == sr
