@@ -21,6 +21,8 @@ from __future__ import annotations
 import importlib
 import logging
 import multiprocessing as mp
+import os
+import sys
 import threading
 import time
 import traceback
@@ -38,8 +40,24 @@ class RemoteError(RuntimeError):
 
 
 # ------------------------------------------------------------- proceso hijo
-def _child(conn, factory: str, args: tuple, kwargs: dict, cancel, log_name: str) -> None:
+def _lower_priority() -> None:
+    """Prioridad «por debajo de lo normal»: el audio en directo y la ventana van primero."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            k32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            k32.SetPriorityClass(k32.GetCurrentProcess(), 0x00004000)   # BELOW_NORMAL_PRIORITY_CLASS
+        else:
+            os.nice(5)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _child(conn, factory: str, args: tuple, kwargs: dict, cancel, log_name: str, low_priority: bool = False) -> None:
     import faulthandler
+
+    if low_priority:
+        _lower_priority()
 
     from .. import paths
     log_path = paths.logs_dir() / f"{log_name}.log"
@@ -106,7 +124,7 @@ class Remote:
 
     def __init__(self, factory: str, args: tuple = (), kwargs: dict | None = None, *, name: str = "modelo",
                  log_name: str = "ia", load_timeout: float = 600.0,
-                 on_stage: Callable[[str], None] | None = None):
+                 on_stage: Callable[[str], None] | None = None, low_priority: bool = False):
         self.name = name
         self.stage = ""
         ctx = mp.get_context("spawn")
@@ -115,7 +133,7 @@ class Remote:
         self._lock = threading.Lock()
         self._closed = False
         self._proc = ctx.Process(target=_child, args=(child, factory, tuple(args), dict(kwargs or {}), self._cancel,
-                                                      log_name), name=f"voicelab-{log_name}", daemon=True)
+                                                      log_name, low_priority), name=f"voicelab-{log_name}", daemon=True)
         self._proc.start()
         child.close()
         try:

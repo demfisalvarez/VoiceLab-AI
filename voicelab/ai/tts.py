@@ -104,7 +104,7 @@ class ChatterboxTTS:
             parts = [("encoder", "onnx/speech_encoder.onnx", "codificador de voz"),
                      ("embed", "onnx/embed_tokens.onnx", "vocabulario"),
                      ("lm", spec["lm"], "modelo de lenguaje"),
-                     ("decoder", "onnx/conditional_decoder.onnx", "generador de audio")]
+                     ("decoder", "onnx/conditional_decoder.onnx", "generador de audio, el paso más largo")]
             sessions = {}
             for i, (key, rel, label) in enumerate(parts, 1):
                 if stage:
@@ -295,8 +295,10 @@ class TTSService:
     @staticmethod
     def _spawn(model_key: str, gpu: bool, on_stage):
         from .procs import Remote
+        # El generador de audio tiene ~24 000 nodos: crear la sesión tarda de 1 a 4 minutos según el PC
+        # (medido en Windows). Por eso se precarga y se mantiene vivo, y con prioridad baja.
         return Remote("voicelab.ai.tts:open_engine", (model_key, gpu), name="motor de texto a voz",
-                      log_name="texto-a-voz", load_timeout=600, on_stage=on_stage)
+                      log_name="texto-a-voz", load_timeout=900, on_stage=on_stage, low_priority=True)
 
     def _ensure(self, model_key: str, gpu: bool, on_stage):
         key = (model_key, gpu)

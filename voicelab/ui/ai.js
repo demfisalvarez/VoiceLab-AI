@@ -124,7 +124,7 @@
       const el = $('#tts-engine-state');
       if (!r.ok || !el) return;
       const t = r.tts;
-      el.innerHTML = t.state === 'loading' ? '<span class="spin-dot"></span> Preparando el motor… ' + VL.esc(t.stage || '') + ' <span class="muted">(la primera vez tarda 1–2 minutos; puedes ir escribiendo)</span>'
+      el.innerHTML = t.state === 'loading' ? '<span class="spin-dot"></span> Preparando el motor… ' + VL.esc(t.stage || '') + ' <span class="muted">(tarda 1–3 minutos cada vez que abres la app; después cada frase sale en segundos. Puedes ir escribiendo)</span>'
         : t.state === 'ready' ? '● Motor listo' + (t.device === 'gpu' ? ' (GPU)' : ' (CPU)')
         : t.state === 'error' ? 'No se pudo preparar el motor: ' + VL.esc(t.error || '') : '';
       if (VL.S.page !== 'tts' || t.state === 'ready' || t.state === 'error') { clearInterval(ttsTimer); ttsTimer = null; }
