@@ -67,6 +67,13 @@ jobs:
           $env:UV_PYTHON_PREFERENCE = "only-managed"
           & "dist/VoiceLab AI/bin/uv.exe" venv --no-config --python 3.12 vc-test
           & vc-test\Scripts\python.exe -c "import sys; print(sys.version)"
+      - name: Voz en directo desde el .exe (entorno de PyTorch con uv)
+        run: |
+          ./tools/ci_run_exe.ps1 -Exe "dist\VoiceLab AI\VoiceLab AI.exe" -Arguments '--selftest-live', "`"$PWD\live.json`"" -TimeoutSec 900 -DataDir "$PWD\live-datos" -Shot "$PWD\captura-live.png"
+          $code = $LASTEXITCODE
+          Get-Content live.json -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "dist\VoiceLab AI\vc-runtime", "dist\VoiceLab AI\vc-python" -ErrorAction SilentlyContinue
+          if ($code -ne 0) { throw "La voz en directo no funciona desde el .exe ($code)" }
       - name: Ventana real (WebView2)
         continue-on-error: true
         run: |

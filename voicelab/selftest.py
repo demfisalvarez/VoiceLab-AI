@@ -84,3 +84,31 @@ def run(out: Path, services=None) -> int:
     results["ok"] = all(v.get("ok") for v in results.values() if isinstance(v, dict) and "ok" in v)
     out.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
     return 0 if results["ok"] else 1
+
+
+def run_live_runtime(out: Path) -> int:
+    """Instala el entorno de PyTorch como lo haría el usuario y arranca el proceso de la voz en directo.
+
+    Sin pesos del modelo: basta con que el proceso arranque, importe PyTorch y avise de que faltan
+    archivos (así se comprueba la ruta completa del .exe sin descargar 1,6 GB).
+    """
+    from .ai import meanvc
+    results: dict = {}
+    _check(results, "instalar_entorno", lambda: (meanvc.install_runtime(lambda p: None),
+                                                 str(meanvc.runtime_python()))[1])
+
+    def worker():
+        import tempfile
+        cmd = meanvc.worker_command("120ms")
+        cmd[cmd.index("--weights") + 1] = tempfile.mkdtemp()
+        try:
+            meanvc.MeanVCWorker(cmd, start_timeout=300).close()
+        except meanvc.WorkerError as exc:
+            if "Faltan archivos del modelo" in str(exc):
+                return "arranca e importa PyTorch: " + str(exc)[:120]
+            raise
+        raise RuntimeError("arrancó sin pesos (inesperado)")
+    _check(results, "proceso_voz_en_directo", worker)
+    results["ok"] = all(v.get("ok") for v in results.values() if isinstance(v, dict))
+    out.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
+    return 0 if results["ok"] else 1

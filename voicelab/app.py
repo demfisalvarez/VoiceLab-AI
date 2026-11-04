@@ -217,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--debug", action="store_true", help="registro detallado y herramientas web")
     parser.add_argument("--selftest", metavar="JSON", help="autocomprobación sin ventana (compilación)")
     parser.add_argument("--selftest-window", metavar="JSON", help="abre la ventana, espera a la interfaz y sale")
+    parser.add_argument("--selftest-live", metavar="JSON", help="instala el entorno de PyTorch y prueba el proceso")
     args = parser.parse_args(argv)
 
     log_file = setup_logging(args.debug)
@@ -227,6 +228,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.selftest:
         from . import selftest
         return selftest.run(Path(args.selftest))
+    if args.selftest_live:
+        from . import selftest
+        return selftest.run_live_runtime(Path(args.selftest_live))
 
     instance = SingleInstance()
     if not instance.acquire():
