@@ -67,6 +67,19 @@ class RingBuffer:
         self._r += k
         return k
 
+    def peek_into(self, out: np.ndarray, n: int) -> int:
+        """Como ``read_into`` pero sin consumir las muestras. Solo el lector."""
+        avail = self._w - self._r
+        k = min(n, avail)
+        if k <= 0:
+            return 0
+        start = self._r % self._cap
+        first = min(k, self._cap - start)
+        out[:first] = self._buf[start:start + first]
+        if k > first:
+            out[first:k] = self._buf[: k - first]
+        return k
+
     def skip(self, n: int) -> int:
         """Descarta hasta ``n`` muestras (las más antiguas). Solo el lector."""
         k = max(0, min(n, self._w - self._r))

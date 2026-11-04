@@ -11,8 +11,8 @@ Piezas:
 * ``meanvc_worker.py``: proceso que carga MeanVC2 y atiende peticiones por
   tuberías (protocolo binario sencillo).
 * :class:`RealtimeMeanVC`: procesador para el motor de audio. Remuestrea a
-  16 kHz, envía bloques de 160 ms al proceso y devuelve el audio convertido
-  con un pequeño colchón para que no haya cortes.
+  16 kHz, envía bloques del tamaño natural del modelo (80 o 160 ms) y devuelve
+  el audio convertido con un búfer adaptativo: el mínimo retraso sin cortes.
 """
 
 from __future__ import annotations
@@ -42,6 +42,7 @@ MODEL_KEY = "meanvc2"
 SR16 = proto.SR
 CHUNK16 = proto.CHUNK
 VARIANTS = {"120ms": "Calidad (bloques de 120 ms)", "40ms": "Baja latencia (bloques de 40 ms)"}
+_ABOVE_NORMAL = 0x00008000 if sys.platform == "win32" else 0   # prioridad alta (sin llegar a tiempo real)
 
 
 def packages(version: tuple = sys.version_info[:2]) -> list[str]:
@@ -193,11 +194,13 @@ def hd_weights() -> Path:
     return models.model_dir(HD_KEY) / "apbwe_16kto48k.pt"
 
 
-def worker_command(variant: str = "120ms", threads: int = 1, hd: bool = False) -> list[str]:
+def worker_command(variant: str = "120ms", threads: int = 1, hd: bool = False, chunk: int = 0) -> list[str]:
     cmd = [str(runtime_python()), "-I", str(worker_script()), "--code", str(code_dir()),
            "--weights", str(weights_dir()), "--model", variant, "--threads", str(threads)]
     if hd:
         cmd += ["--hd", str(hd_weights())]
+    if chunk:
+        cmd += ["--chunk", str(int(chunk))]
     return cmd
 
 
@@ -290,17 +293,18 @@ def selftest(variant: str = "120ms", seconds: float = 4.0, hd: bool = False) -> 
         if emb.shape != (proto.EMB_DIM,) or not np.all(np.isfinite(emb)):
             raise WorkerError("La huella de voz calculada no es válida.")
         w.set_embedding(emb)
-        n = max(3, int(seconds * SR16 / CHUNK16))
+        c = int(w.hello.get("chunk", CHUNK16))
+        n = max(3, int(seconds * SR16 / c))
         times, produced = [], 0
         for i in range(n):
             t0 = time.perf_counter()
-            produced += w.process(probe[(i * CHUNK16) % (probe.shape[0] - CHUNK16):][:CHUNK16]).shape[0]
+            produced += w.process(probe[(i * c) % (probe.shape[0] - c):][:c]).shape[0]
             times.append(time.perf_counter() - t0)
         if produced == 0:
             raise WorkerError("El modelo no devolvió audio en la prueba.")
         ms = float(np.median(times[1:]) * 1000)
-        res = {"variant": variant, "ms_per_chunk": round(ms, 1), "chunk_ms": CHUNK16 / SR16 * 1000,
-               "rtf": round(ms / (CHUNK16 / SR16 * 1000), 3), "torch": w.hello.get("torch"),
+        res = {"variant": variant, "ms_per_chunk": round(ms, 1), "chunk_ms": c / SR16 * 1000,
+               "rtf": round(ms / (c / SR16 * 1000), 3), "torch": w.hello.get("torch"),
                "hd": bool(w.hello.get("hd"))}
     finally:
         w.close()
@@ -403,14 +407,17 @@ def profile_embedding(worker: "MeanVCWorker", profile_dir: Path) -> np.ndarray:
 class MeanVCWorker:
     """Proceso de MeanVC2. Las llamadas son síncronas y seguras entre hilos."""
 
-    def __init__(self, cmd: list[str], start_timeout: float = 240.0, env: dict | None = None):
+    def __init__(self, cmd: list[str], start_timeout: float = 240.0, env: dict | None = None,
+                 realtime: bool = False):
         self._lock = threading.Lock()
         self._close_lock = threading.Lock()
         self._closed = False
         self._log = open(paths.logs_dir() / "voz-instantanea.log", "wb")  # noqa: SIM115
         try:
+            # En directo, prioridad «por encima de lo normal»: un juego o el navegador no lo retrasan.
+            flags = _NO_WINDOW | (_ABOVE_NORMAL if realtime else 0)
             self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self._log,
-                                         creationflags=_NO_WINDOW, env=env)
+                                         creationflags=flags, env=env)
         except OSError as exc:
             self._log.close()
             raise WorkerError(f"No se pudo iniciar el motor de voz instantánea: {exc}") from exc
@@ -511,52 +518,91 @@ class MeanVCWorker:
 
 
 # --------------------------------------------------- procesador del motor
+_FADE = 64                                                  # muestras de fundido en los huecos
+
+
 class RealtimeMeanVC:
     """Procesador para el motor de audio (misma interfaz que ``RealtimeRVC``).
 
-    El hilo de audio solo copia muestras. Un hilo aparte remuestrea a 16 kHz,
-    envía bloques exactos de 2560 muestras (160 ms) al proceso y devuelve el
-    resultado al ritmo del motor. Antes de sonar se acumula un colchón; si la
-    CPU no da abasto y se vacía, vuelve a acumularlo en lugar de entrecortar.
+    El hilo de audio solo copia muestras. Un hilo aparte remuestrea a 16 kHz, envía
+    al proceso bloques del tamaño natural del modelo (80 ms en «40ms», 160 ms en
+    «120ms») y deja el resultado en una cola de salida.
+
+    La cola es un búfer adaptativo: arranca con un margen pequeño (más el vaivén
+    propio del modelo), crece si la CPU se retrasa y, cuando sobra, se encoge sola
+    en los silencios entre palabras, para que el retraso no se quede alto.
     """
 
     kind = "instant"
+    MARGIN_S = 0.03                                         # margen inicial sobre el vaivén del modelo
+    MARGIN_MIN_S = 0.015
+    MARGIN_MAX_S = 0.25
+    WINDOW_S = 3.0                                          # cada cuánto se revisa el margen
+    STATS_S = 30.0                                          # cada cuánto se apunta en el registro
 
-    def __init__(self, worker: MeanVCWorker, sr: int = 48000, variant: str = "120ms", cushion_s: float = 0.12,
-                 owns_worker: bool = True):
+    def __init__(self, worker: MeanVCWorker, sr: int = 48000, variant: str = "120ms",
+                 margin_s: float | None = None, owns_worker: bool = True):
+        hello = getattr(worker, "hello", None) or {}
         self.w, self.sr, self.variant = worker, int(sr), variant
-        self.out_sr = int((getattr(worker, "hello", None) or {}).get("out_sr", SR16))
         self.owns_worker = owns_worker
-        self.block = int(round(CHUNK16 * self.sr / SR16))          # 160 ms a la frecuencia del motor
-        self.cushion = int(cushion_s * self.sr)
-        self.lookahead = int(0.04 * self.sr)                       # contexto futuro del modelo
-        self._level = 0.0                                           # ocupación media del colchón
+        self.out_sr = int(hello.get("out_sr", SR16))
+        self.chunk16 = int(hello.get("chunk", CHUNK16))
+        self.align16 = int(hello.get("align", 0))
+        self.hold_ms = float(hello.get("hold_ms", 0.0))
+        self.burst = int(float(hello.get("burst_ms", 0.0)) / 1000 * self.sr)
+        self.block = int(round(self.chunk16 * self.sr / SR16))
+        self._mmin = int(self.MARGIN_MIN_S * self.sr) + self.burst
+        self._mmax = int(self.MARGIN_MAX_S * self.sr) + self.burst
+        self.margin = max(self._mmin, int((self.MARGIN_S if margin_s is None else margin_s) * self.sr) + self.burst)
         self.inq = RingBuffer(self.sr * 10)
         self.outq = RingBuffer(self.sr * 10)
         self.infer_ms = 0.0
         self.underruns = 0
-        self.dropped = 0
+        self.dropped = 0                                    # entrada descartada por ir la CPU por detrás
+        self.trimmed = 0                                    # salida sobrante quitada en silencios
         self.error: str | None = None
+        self._skipped = 0                                   # alineación inicial (no es pérdida)
+        self._in_total = 0
+        self._out_real = 0
         self._priming = True
+        self._lead = 0
+        self._fade_in = False
+        self._loud = 0.0
+        self._trim = 0
+        self._pad = 0
+        self._was_quiet = True
+        self._win_n = 0
+        self._win_min: int | None = None
+        self._win_under = 0
+        self._calm = 0
+        self._lat: float | None = None
+        self._peak_ms = 0.0
+        self._skip16 = self.align16
+        self._realign = False
         self._tmp = np.zeros(self.sr, np.float32)
+        self._ramp = np.linspace(0.0, 1.0, _FADE, dtype=np.float32)
         # Se crean aquí (en la tarea de carga) y no en el hilo, para no retrasar el primer audio.
         self._rs_in, self._rs_out = StreamResampler(self.sr, SR16), StreamResampler(self.out_sr, self.sr)
-        if self.out_sr != SR16:
-            self.lookahead += int(0.025 * self.sr)                  # contexto de la alta definición
         self._ev = threading.Event()
         self._stop = False
         self._t = threading.Thread(target=self._run, name="voz-instantanea", daemon=True)
         self._t.start()
 
+    # -- información
+    def _estimate(self) -> float:
+        """Retraso esperado antes de medirlo: bloque + lo que retiene el modelo + cálculo + margen."""
+        return self.block + self.hold_ms / 1000 * self.sr + self.infer_ms / 1000 * self.sr + self.margin
+
     @property
     def latency_samples(self) -> int:
-        """Latencia real aproximada: bloque de entrada + contexto + cálculo + colchón medido."""
-        level = max(self._level, float(self.cushion))
-        return int(self.block + self.lookahead + self.infer_ms / 1000 * self.sr + level)
+        """Retraso real: lo que ha entrado y aún no ha salido (medido, no estimado)."""
+        return int(self._lat if self._lat is not None else self._estimate())
 
     def set_embedding(self, emb: np.ndarray) -> None:
         """Cambia de voz sin reiniciar el proceso (perfiles instantáneos)."""
-        self.w.set_embedding(emb)
+        self.w.set_embedding(emb)                           # el proceso reinicia su estado
+        self._realign = True
+        self._ev.set()
 
     def close(self) -> None:
         self._stop = True
@@ -566,48 +612,123 @@ class RealtimeMeanVC:
 
     # -- hilo de audio
     def process(self, x: np.ndarray) -> np.ndarray:
-        self.inq.write(x)
-        if self.inq.available() >= self.block:
-            self._ev.set()
         n = x.shape[0]
-        if self._tmp.shape[0] < n:
-            self._tmp = np.zeros(n * 2, np.float32)
+        self.inq.write(x)
+        self._in_total += n
+        self._ev.set()                                      # el bloque se envía en cuanto está completo
+        if self._tmp.shape[0] < 4 * n:
+            self._tmp = np.zeros(8 * n, np.float32)
+        out = np.zeros(n, np.float32)
         avail = self.outq.available()
         if self._priming:
-            if avail < self.cushion + n:
-                return np.zeros(n, np.float32)
+            if avail == 0:
+                return out
             self._priming = False
-        high = self.cushion + 2 * self.block + n                   # no dejar que la latencia crezca
-        if avail > high:
-            self.outq.skip(avail - (self.cushion + n))
-        self._level = avail if self._level == 0 else 0.995 * self._level + 0.005 * avail
-        got = self.outq.read_into(self._tmp, n)
-        out = self._tmp[:n].copy()
-        if got < n:
-            out[got:] = 0.0
-            self.underruns += 1
-            self._priming = True
+            # El margen, en silencio, antes de la voz (y lo que le falte al primer bloque, que sale corto).
+            self._lead = self.margin + max(0, self.block - avail)
+        pos = 0
+        if self._lead:
+            pos = min(self._lead, n)
+            self._lead -= pos
+        want = n - pos
+        if avail > self.margin + 2 * self.block + n:        # tope: un atasco largo no deja el retraso alto
+            self.trimmed += self.outq.skip(avail - (self.margin + self.block + n))
+        elif self._trim and want:
+            self._trim_quiet(want)
+        elif self._pad and want and self._quiet_ahead(want):
+            k = min(self._pad, want)                        # falta margen: se alarga un silencio
+            self._pad -= k
+            pos += k
+            want -= k
+        got = self.outq.read_into(self._tmp, want) if want else 0
+        if got:
+            seg = self._tmp[:got]
+            if self._fade_in:
+                k = min(got, _FADE)
+                seg[:k] *= self._ramp[:k]
+                self._fade_in = False
+            out[pos:pos + got] = seg
+            self._out_real += got
+            peak = float(np.max(np.abs(seg)))
+            self._loud = max(peak, self._loud * 0.999)
+            self._was_quiet = peak < max(0.003, 0.05 * self._loud)
+        if got < want:                                      # la CPU no llegó: hueco con fundidos
+            if got:
+                k = min(got, _FADE)
+                out[pos + got - k:pos + got] *= self._ramp[:k][::-1]
+            if not self._fade_in:                           # un hueco cuenta una vez, dure lo que dure
+                self.underruns += 1
+                self._win_under += 1
+            self._fade_in = True
+        self._lat = float(self._in_total - self.dropped - self._skipped - self.trimmed - self._out_real)
+        level = self.outq.available()
+        self._win_min = level if self._win_min is None else min(self._win_min, level)
+        self._win_n += n
+        if self._win_n >= self.WINDOW_S * self.sr:
+            self._adapt()
         return out
+
+    def _quiet_ahead(self, n: int) -> bool:
+        """¿Lo próximo que va a sonar (y lo último que sonó) es silencio?"""
+        if not self._was_quiet:
+            return False
+        got = self.outq.peek_into(self._tmp, n)
+        return got == n and float(np.max(np.abs(self._tmp[:got]))) < max(0.003, 0.05 * self._loud)
+
+    def _trim_quiet(self, want: int) -> None:
+        """Quita el sobrante del búfer solo donde hay silencio (no se nota)."""
+        k = min(self._trim, want, self.outq.available() - want)
+        if k > 0 and self._quiet_ahead(k + want):
+            self.trimmed += self.outq.skip(k)
+            self._trim -= k
+
+    def _adapt(self) -> None:
+        log.debug("búfer: mínimo %s margen %s huecos %s recorte %s relleno %s retraso %s", self._win_min,
+                  self.margin, self._win_under, self._trim, self._pad, self.latency_samples)
+        if self._win_under:                                 # hubo huecos: más margen
+            self.margin = min(self._mmax, self.margin + int(0.02 * self.sr))
+            self._calm = 0
+            self._trim = self._pad = 0
+        else:
+            self._calm += 1
+            if self._calm * self.WINDOW_S >= 30:            # 30 s sin huecos: probar con algo menos
+                self.margin = max(self._mmin, self.margin - int(0.005 * self.sr))
+                self._calm = 0
+            level = self._win_min or 0
+            self._trim = level - self.margin if level - self.margin > int(0.01 * self.sr) else 0
+            self._pad = self.margin - level if self.margin - level > int(0.005 * self.sr) else 0
+        self._win_n, self._win_min, self._win_under = 0, None, 0
 
     # -- hilo de conversión
     def _run(self) -> None:
         rs_in, rs_out = self._rs_in, self._rs_out
         pend = np.zeros(0, np.float32)
         buf = np.zeros(self.sr * 2, np.float32)
+        last_log, under0, drop0 = time.monotonic(), 0, 0
         while not self._stop:
             self._ev.wait(0.2)
             self._ev.clear()
             while not self._stop:
+                if self._realign:                           # voz nueva: el proceso empezó de cero
+                    self._realign = False
+                    pend = np.zeros(0, np.float32)
+                    self._skip16 = self.align16
                 n = self.inq.available()
                 if n == 0:
                     break
-                if n > 3 * self.block:                              # la CPU va por detrás: se descarta lo viejo
+                if n > 3 * self.block:                      # la CPU va por detrás: se descarta lo viejo
                     self.dropped += self.inq.skip(n - self.block)
                     n = self.inq.available()
                 k = self.inq.read_into(buf, min(n, buf.shape[0]))
-                pend = np.concatenate([pend, rs_in.process(buf[:k])])
-                while pend.shape[0] >= CHUNK16 and not self._stop:
-                    chunk, pend = pend[:CHUNK16], pend[CHUNK16:]
+                x16 = rs_in.process(buf[:k])
+                if self._skip16:                            # alineación con la ventana del reconocedor
+                    d = min(self._skip16, x16.shape[0])
+                    x16 = x16[d:]
+                    self._skip16 -= d
+                    self._skipped += int(round(d * self.sr / SR16))
+                pend = np.concatenate([pend, x16])
+                while pend.shape[0] >= self.chunk16 and not self._stop and not self._realign:
+                    chunk, pend = pend[:self.chunk16], pend[self.chunk16:]
                     t0 = time.perf_counter()
                     try:
                         y = self.w.process(chunk)
@@ -619,5 +740,14 @@ class RealtimeMeanVC:
                         return
                     ms = (time.perf_counter() - t0) * 1000
                     self.infer_ms = ms if self.infer_ms == 0 else 0.85 * self.infer_ms + 0.15 * ms
+                    self._peak_ms = max(self._peak_ms, ms)
                     if y.shape[0]:
                         self.outq.write(rs_out.process(y))
+            if time.monotonic() - last_log >= self.STATS_S and not self._stop:
+                last_log = time.monotonic()
+                log.info("Voz instantánea (%s): retraso %d ms (modelo %d, margen %d), cálculo %.0f ms "
+                         "por bloque de %d ms (pico %.0f), huecos %d, entrada descartada %d ms, recortado %d ms",
+                         self.variant, self.latency_samples * 1000 // self.sr, self.hold_ms, self.margin * 1000 // self.sr,
+                         self.infer_ms, self.chunk16 * 1000 // SR16, self._peak_ms, self.underruns - under0,
+                         (self.dropped - drop0) * 1000 // self.sr, self.trimmed * 1000 // self.sr)
+                under0, drop0, self._peak_ms = self.underruns, self.dropped, 0.0

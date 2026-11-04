@@ -815,7 +815,7 @@ class AIApiMixin:
                     inner.set_embedding(emb)
                     self._engine.set_ai(self._finish(inner, sr), close_old=False)   # por si cambió el acabado
                 return
-            worker = meanvc.MeanVCWorker(meanvc.worker_command(variant, threads=2 if hd else 1, hd=hd))
+            worker = meanvc.MeanVCWorker(meanvc.worker_command(variant, threads=2 if hd else 1, hd=hd), realtime=True)
             try:
                 worker.set_embedding(meanvc.profile_embedding(worker, pdir))
             except Exception:

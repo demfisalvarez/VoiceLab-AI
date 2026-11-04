@@ -186,6 +186,81 @@ def test_realtime_meanvc_is_continuous_with_bursty_model():
     assert not w.alive
 
 
+def test_model_geometry_alignment_and_hold():
+    P = meanvc.proto
+    assert P.alignment("120ms", 2560) == 1840 and P.hold("120ms", 2560) == (175.0, 80.0)
+    assert P.alignment("40ms", 1280) == 560 and P.hold("40ms", 1280) == (95.0, 0.0)
+    assert P.CHUNKS == {"120ms": 2560, "40ms": 1280}
+
+
+def _lag(x, y, sr, max_s=1.0):
+    """Retraso de «y» respecto a «x» (envolventes de 5 ms)."""
+    h = sr // 200
+    ex = np.abs(x[: x.shape[0] // h * h]).reshape(-1, h).mean(1)
+    ey = np.abs(y[: y.shape[0] // h * h]).reshape(-1, h).mean(1)
+    m = min(ex.shape[0], ey.shape[0])
+    best = max(range(int(max_s * 200)), key=lambda d: float(np.dot(ex[: m - d], ey[d:m])))
+    return best / 200
+
+
+def speechy(seconds, sr=SR):
+    """Tono a ráfagas (0,5 s sonando, 0,3 s en silencio), como frases con pausas."""
+    x = sine(220, seconds, sr)
+    t = np.arange(x.shape[0]) / sr
+    return (x * ((t % 0.8) < 0.5)).astype(np.float32)
+
+
+def test_realtime_meanvc_steady_model_has_low_measured_latency(monkeypatch):
+    monkeypatch.setenv("FAKE_MVC_STEADY", "1")
+    w = meanvc.MeanVCWorker(fake_cmd())
+    w.set_embedding(np.zeros(256, np.float32))
+    proc = meanvc.RealtimeMeanVC(w, SR, "40ms")
+    assert proc.block == int(0.08 * SR) and proc.burst == 0
+    x = speechy(4.0)
+    y = run_realtime(proc, x, block=256)
+    lag = _lag(x, y, SR)
+    # 80 ms de bloque + 95 retenidos + 30 de margen + cálculo y remuestreo
+    assert 0.19 < lag < 0.30, lag
+    assert proc.latency_samples / SR == pytest.approx(lag, abs=0.02)   # lo que se muestra es lo real
+    assert proc.underruns == 0 and proc.dropped == 0
+    proc.close()
+
+
+@pytest.mark.parametrize("stall_ms", [200, 400])
+def test_realtime_meanvc_recovers_latency_after_a_stall(monkeypatch, stall_ms):
+    monkeypatch.setenv("FAKE_MVC_STEADY", "1")
+    monkeypatch.setenv("FAKE_MVC_STALL", f"12:{stall_ms}")    # la CPU se atasca una vez
+    monkeypatch.setattr(meanvc.RealtimeMeanVC, "WINDOW_S", 1.0)
+    w = meanvc.MeanVCWorker(fake_cmd())
+    w.set_embedding(np.zeros(256, np.float32))
+    proc = meanvc.RealtimeMeanVC(w, SR, "40ms")
+    x = speechy(9.0)
+    y = run_realtime(proc, x, block=256)
+    assert proc.underruns == 1                                 # un único hueco
+    # Lo que sobró tras el atasco se quitó (en los silencios o descartando entrada vieja).
+    assert (proc.trimmed + proc.dropped) > 0.1 * SR
+    if stall_ms < 240:
+        assert proc.trimmed > 0.1 * SR and proc.dropped == 0
+    assert proc.latency_samples / SR < 0.26
+    tail_x, tail_y = x[-int(3 * SR):], y[-int(3 * SR):]
+    assert _lag(tail_x, tail_y, SR) < 0.26                     # el retraso vuelve a ser bajo
+    proc.close()
+
+
+def test_realtime_meanvc_realigns_on_voice_change(monkeypatch):
+    monkeypatch.setenv("FAKE_MVC_STEADY", "1")
+    w = meanvc.MeanVCWorker(fake_cmd())
+    w.set_embedding(np.zeros(256, np.float32))
+    proc = meanvc.RealtimeMeanVC(w, SR, "40ms")
+    proc.align16 = proc._skip16 = 320                         # noqa: SLF001
+    run_realtime(proc, sine(220, 0.5, SR), block=256)
+    proc.set_embedding(np.ones(256, np.float32))
+    run_realtime(proc, sine(220, 0.5, SR), block=256)
+    assert proc._skipped == 2 * 320 * SR // 16000              # noqa: SLF001
+    assert proc.error is None
+    proc.close()
+
+
 def test_realtime_meanvc_reports_worker_death(monkeypatch):
     monkeypatch.setenv("FAKE_MVC_DIE_AFTER", "3")
     w = meanvc.MeanVCWorker(fake_cmd())

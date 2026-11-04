@@ -11,7 +11,7 @@ Protocolo binario por stdin/stdout. Cada mensaje es::
 Peticiones (app → proceso):
     E  float32[256]   fijar la huella de voz (embedding) del hablante destino
     R  float32[n]     calcular la huella a partir de audio de referencia a 16 kHz
-    A  float32[n]     convertir un bloque de 2560 muestras a 16 kHz
+    A  float32[n]     convertir un bloque de audio a 16 kHz (``chunk`` muestras, ver «hello»)
     Z  -              reiniciar el estado del streaming
     Q  -              terminar
 
@@ -34,6 +34,12 @@ import sys
 HEADER = struct.Struct("<cI")
 SR = 16000
 CHUNK = 2560
+# Bloque natural de cada modelo (múltiplo del paso del reconocedor): 160 ms para el
+# de 120 ms (reconocedor de 160 ms) y 80 ms para el de 40 ms (reconocedor de 80 ms).
+CHUNKS = {"120ms": 2560, "40ms": 1280}
+# Ventana y paso del reconocedor (tramas de 10 ms) y paso de la conversión (tramas).
+ASR_GEOMETRY = {"120ms": (19, 16), "40ms": (11, 8)}
+VC_CHUNK = {"120ms": 12, "40ms": 4}
 EMB_DIM = 256
 MAX_REF_S = 30
 
@@ -70,6 +76,83 @@ WEIGHT_FILES = {
 SPEAKER_FILE = "wavlm_large_finetune.pth"
 
 
+def alignment(model: str, chunk: int) -> int:
+    """Muestras a descartar tras reiniciar para que cada ventana del reconocedor se
+    complete justo al llegar un bloque (sin tramas esperando de más = menos retraso)."""
+    window = ASR_GEOMETRY[model][0]
+    need = (window - 1) * 160 + 400                 # muestras para la primera ventana completa
+    k = -(-need // chunk)
+    return k * chunk - need
+
+
+def hold(model: str, chunk: int) -> tuple[float, float]:
+    """Audio retenido dentro del modelo tras cada bloque, en ms (con la alineación):
+    el máximo y cuánto varía de un bloque a otro (ráfagas, p. ej. 120/120/240 ms)."""
+    window, stride = ASR_GEOMETRY[model]
+    asr = ((window - stride) * 160 + 240) / 16      # contexto del reconocedor + solape de la última trama
+    per_call = chunk // 160                         # tramas de 10 ms que aporta cada bloque
+    vc, block = VC_CHUNK[model], 4
+    left, seen = 0, []
+    for i in range(24):                             # ciclo de la conversión
+        left += per_call
+        while left >= vc + block:
+            left -= vc
+        if i >= 12:
+            seen.append(left)
+    return asr + max(seen) * 10 + 10, (max(seen) - min(seen)) * 10.0   # + solape del vocoder
+
+
+def encode_any(self, samples):
+    """``VCRunner._encode_chunk`` de MeanVC2 para bloques de cualquier tamaño.
+
+    Idéntica al original salvo la interpolación ×4 de las tramas del reconocedor
+    (40 ms) a tramas de mel (10 ms): el original la fija a 16 tramas (bloques de
+    160 ms); aquí es 4 × las tramas nuevas, así que con bloques de 160 ms da lo
+    mismo y con bloques de 80 ms no estira ni comprime el tiempo.
+    """
+    import numpy as np
+    import torch
+    import torch.nn.functional as F
+    import torchaudio.compliance.kaldi as kaldi
+
+    with torch.no_grad():
+        padded = np.concatenate((self.samples_cache, samples)) if self.samples_cache.size else samples
+        if len(padded) < 400:
+            self.samples_cache = padded
+            return None
+        wav_t = torch.from_numpy(np.ascontiguousarray(padded * (1 << 15), dtype=np.float32)).unsqueeze(0)
+        fbanks = kaldi.fbank(wav_t, frame_length=25, frame_shift=10, snip_edges=True, num_mel_bins=80,
+                             energy_floor=0.0, dither=0.0, sample_frequency=16000)
+        self.samples_cache = padded[160 * fbanks.shape[0]:]
+        if self.frame_cache is not None:
+            fbanks = torch.cat([self.frame_cache, fbanks], dim=0)
+        if self.asr_offset >= 4000:
+            cache_t = self.asr_att_cache.size(2) if self.asr_att_cache.dim() > 0 else 0
+            self.asr_offset = max(cache_t, self.asr_offset - 4000)
+        bns = []
+        i = 0
+        while i + self._bn_window <= fbanks.shape[0]:
+            out, self.asr_att_cache, self.asr_cnn_cache = self.asr(
+                fbanks[i:i + self._bn_window].unsqueeze(0),
+                torch.tensor(self.asr_offset, dtype=torch.int64),
+                torch.tensor(self._required_cache_size, dtype=torch.int64),
+                self.asr_att_cache, self.asr_cnn_cache,
+            )
+            bns.append(out.squeeze(0).detach())
+            self.asr_offset += self._asr_offset_step
+            i += self._bn_stride
+        self.frame_cache = fbanks[i:]
+        if not bns:
+            return None
+        bn = torch.cat(bns, dim=0).unsqueeze(0)                     # [1, N, 256]
+        n_new = bn.shape[1]
+        prev = self.encoder_output_cache if self.encoder_output_cache is not None else bn[:, :1, :]
+        bn = torch.cat([prev, bn], dim=1)
+        self.encoder_output_cache = bn[:, -1:, :]
+        up = F.interpolate(bn.transpose(1, 2), size=4 * n_new + 1, mode="linear", align_corners=True)
+        return up.transpose(1, 2)[:, 1:, :]
+
+
 # ------------------------------------------------------------------ protocolo
 def read_exact(f, n: int) -> bytes:
     buf = bytearray()
@@ -99,7 +182,10 @@ def send_json(f, obj: dict) -> None:
 
 # --------------------------------------------------------------------- modelo
 class Engine:
-    def __init__(self, code: str, weights: str, model: str, threads: int = 1, hd: str | None = None):
+    def __init__(self, code: str, weights: str, model: str, threads: int = 1, hd: str | None = None,
+                 chunk: int | None = None):
+        import types
+
         import numpy as np
         import torch
 
@@ -126,11 +212,17 @@ class Engine:
         run_rt.init_speaker_model = lambda *a, **k: None
         run_rt.extract_embedding = lambda *a, **k: torch.zeros(1, EMB_DIM)
         self.runner = run_rt.VCRunner(target_wav="", device="cpu", model=model)
+        self.runner._encode_chunk = types.MethodType(encode_any, self.runner)
+        self.chunk = int(chunk or CHUNKS[model])
+        if self.chunk % 160:
+            raise ValueError("El bloque debe ser múltiplo de 160 muestras")
+        self.align = alignment(model, self.chunk)
+        self.hold_ms, self.burst_ms = hold(model, self.chunk)
         torch.set_num_threads(max(1, threads))
         torch.manual_seed(0)
         self.has_speaker = False
-        silence = np.zeros(CHUNK, np.float32)
-        for _ in range(3):                       # calentamiento de TorchScript
+        silence = np.zeros(self.chunk, np.float32)
+        for _ in range(6):                       # calentamiento de TorchScript
             self.runner.process_chunk(silence)
         self.runner._init_cache()
         # Alta definición: AP-BWE amplía la salida de 16 kHz a 48 kHz (graves intactos, agudos nuevos).
@@ -144,7 +236,8 @@ class Engine:
             model_bwe, h = apbwe.load(hd)
             self.bwe = apbwe.StreamingBWE(model_bwe, h)
             self.out_sr = h["hr_sampling_rate"]
-            self.bwe.process(np.zeros(CHUNK, np.float32))          # calentamiento
+            self.hold_ms += (self.bwe.latency + self.bwe.hop) * 1000 / self.bwe.sr   # contexto futuro de la HD
+            self.bwe.process(np.zeros(self.chunk, np.float32))     # calentamiento
             self.bwe.reset()
 
     def set_embedding(self, emb) -> None:
@@ -212,6 +305,7 @@ def main(argv=None) -> int:
     ap.add_argument("--model", default="120ms", choices=tuple(WEIGHT_FILES))
     ap.add_argument("--threads", type=int, default=1)
     ap.add_argument("--hd", default=None, help="pesos de AP-BWE para salir a 48 kHz")
+    ap.add_argument("--chunk", type=int, default=0, help="muestras por bloque (0 = el natural del modelo)")
     args = ap.parse_args(argv)
 
     # El canal binario es una copia de stdout; cualquier print() de las
@@ -223,7 +317,7 @@ def main(argv=None) -> int:
 
     try:
         import numpy as np
-        eng = Engine(args.code, args.weights, args.model, args.threads, args.hd)
+        eng = Engine(args.code, args.weights, args.model, args.threads, args.hd, args.chunk or None)
     except Exception as exc:  # noqa: BLE001
         traceback.print_exc()
         msg = f"{type(exc).__name__}: {exc}"
@@ -233,7 +327,8 @@ def main(argv=None) -> int:
         send_json(out, {"ok": False, "error": msg})
         return 2
     import torch
-    send_json(out, {"ok": True, "model": args.model, "chunk": CHUNK, "sr": SR, "out_sr": eng.out_sr,
+    send_json(out, {"ok": True, "model": args.model, "chunk": eng.chunk, "align": eng.align,
+                    "hold_ms": round(eng.hold_ms, 1), "burst_ms": eng.burst_ms, "sr": SR, "out_sr": eng.out_sr,
                     "hd": eng.bwe is not None, "torch": torch.__version__})
 
     while True:
