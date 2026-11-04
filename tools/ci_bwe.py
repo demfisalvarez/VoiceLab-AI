@@ -28,16 +28,22 @@ import bwe  # noqa: E402
 
 FOLDER = "https://drive.google.com/drive/folders/1IIYTf2zbJWzelu4IftKD6ooHloJ8mnZF"
 dst = OUT / "apbwe"
-r = subprocess.run([sys.executable, "-m", "gdown", "--folder", FOLDER, "-O", str(dst), "--remaining-ok"],
-                   capture_output=True, text=True, encoding="utf-8", errors="replace")
-print(r.stdout[-4000:], r.stderr[-4000:], flush=True)
-ids = re.findall(r"Processing file (\S+) (\S+)", r.stdout + r.stderr)
-print("IDs:", ids, flush=True)
-ck = sorted(p for p in dst.rglob("*") if p.is_file() and "16kto48k" in str(p) and p.name.startswith("g_"))
-cfgs = sorted(p for p in dst.rglob("config.json") if "16kto48k" in str(p))
+import gdown  # noqa: E402
+
+files = gdown.download_folder(FOLDER, output=str(dst), quiet=True, skip_download=True)
+for it in files:
+    print("archivo:", getattr(it, "id", None), getattr(it, "path", None), flush=True)
+want = [it for it in files if "16kto48k" in str(getattr(it, "path", ""))]
+for it in want:
+    target = dst / it.path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    gdown.download(id=it.id, output=str(target), quiet=True)
+    print("descargado", it.id, it.path, target.stat().st_size, hashlib.sha256(target.read_bytes()).hexdigest(),
+          flush=True)
+ck = sorted(p for p in dst.rglob("*") if p.is_file() and p.name.startswith("g_"))
+cfgs = sorted(p for p in dst.rglob("config.json"))
 print("checkpoint:", ck, "config:", cfgs, flush=True)
 f = ck[0]
-print("tamaño", f.stat().st_size, "sha256", hashlib.sha256(f.read_bytes()).hexdigest(), flush=True)
 if cfgs:
     print("config del autor:", cfgs[0].read_text(), flush=True)
 
