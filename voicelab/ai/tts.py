@@ -156,9 +156,9 @@ class ChatterboxTTS:
         feed = {"input_ids": input_ids, "position_ids": position_ids,
                 "exaggeration": np.array([exaggeration], dtype=np.float32)}
         # Estabilidad 100 %: decodificación voraz (como el script de referencia de la exportación ONNX).
-        # Por debajo: muestreo como el Chatterbox oficial (temperatura 0,8 al 50 %, min_p 0,05, penalización 2,0).
-        temperature = 0.0 if stability >= 0.99 else 0.5 + 0.6 * (1.0 - stability)
-        penalty = RepetitionPenalty(1.2 if temperature == 0.0 else 2.0)
+        # Por debajo: muestreo con temperatura (0,65 al 50 %) y min_p 0,05.
+        temperature = 0.0 if stability >= 0.99 else 0.3 + 0.7 * (1.0 - stability)
+        penalty = RepetitionPenalty(1.2)
         generated = np.array([[START]], dtype=np.int64)
         past, mask = None, None
         for i in range(max_new):
@@ -176,7 +176,9 @@ class ChatterboxTTS:
             # Solo son válidos los tokens de voz (0–6560) y el de fin; el resto rompería el decodificador.
             scores[:, START] = -np.inf
             scores[:, STOP + 1:] = -np.inf
-            if temperature == 0.0:
+            if temperature == 0.0 or int(np.argmax(scores[0])) == STOP:
+                # Con muestreo el token de fin casi nunca sale elegido y el audio se alarga con ruido:
+                # se para en cuanto es el más probable, como en la decodificación voraz.
                 nxt = np.argmax(scores, axis=-1, keepdims=True).astype(np.int64)
             else:
                 z = scores[0] / temperature

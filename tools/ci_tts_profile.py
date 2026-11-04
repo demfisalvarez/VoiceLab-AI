@@ -108,7 +108,7 @@ def main():
     textos = {"es": "Hola, esto es una prueba de texto a voz hecha en tu ordenador, sin internet.",
               "es2": "Mañana por la tarde iremos al mercado a comprar fruta, pan y queso para la cena.",
               "en": "The quick brown fox jumps over the lazy dog."}
-    modelos = [m for m in ("chatterbox-v3", "chatterbox-v2") if m in models.CATALOG]
+    modelos = ["chatterbox-v2"]
     for mk in modelos:
         if not models.installed(mk):
             t0 = time.perf_counter()
@@ -118,20 +118,25 @@ def main():
         sp = models.CATALOG[mk]
         partes = {"encoder": "onnx/speech_encoder.onnx", "embed": "onnx/embed_tokens.onnx", "lm": sp["lm"],
                   "decoder": "onnx/conditional_decoder.onnx"}
-        sessions = {k: load(dm / p, LEVELS["todas"])[0] for k, p in partes.items()}
+        sessions = {}
+        for k, p in partes.items():
+            sessions[k], t = load(dm / p, LEVELS["todas"])
+            print(f"carga {mk} {k}: {t} s", flush=True)
         tokm = Tokenizer.from_file(str(dm / "tokenizer.json"))
-        casos = [("es", None, 1.0), ("es2", None, 1.0), ("es", "", 1.0), ("en", None, 1.0), ("es", None, 0.9)]
-        for key_t, tag, stab in casos:
+        casos = [("es", None, 1.0, 10), ("es", None, 1.0, 6), ("es2", None, 1.0, 6), ("es", None, 0.5, 6),
+                 ("es2", None, 0.5, 10), ("en", None, 1.0, 6)]
+        for key_t, tag, stab, refs in casos:
             stats: dict = {}
             eng = tts.ChatterboxTTS(mk, {k: Timed(s, k, stats) for k, s in sessions.items()}, tokm)
             eng.lang_tag = tag
+            eng.ref_seconds = refs
             lang = key_t[:2]
             text = textos[key_t]
             t0 = time.perf_counter()
             wav = eng.synthesize(text, ref, lang, 0.5, stab, 1.0, seed=0)
             dt = time.perf_counter() - t0
             heard = oir(wav, lang)
-            key = f"{mk} {key_t} etiqueta={tag!r} estabilidad={stab}"
+            key = f"{mk} {key_t} ref={refs}s estabilidad={stab}"
             R[key] = {"seg_audio": round(wav.shape[0] / tts.SR, 2), "seg_calculo": round(dt, 1), **eng.last_stats,
                       "oido": heard, "parecido": parecido(heard, text),
                       "decoder_s": round(stats.get("decoder", {}).get("s", 0), 1)}
