@@ -68,13 +68,6 @@ def main():
     parts = {"encoder": "onnx/speech_encoder.onnx", "embed": "onnx/embed_tokens.onnx", "lm": spec["lm"],
              "decoder": "onnx/conditional_decoder.onnx"}
     print("CPU:", os.cpu_count(), "hilos; ORT", ort.__version__, flush=True)
-    for name in ("encoder", "lm", "decoder"):
-        for lv, level in LEVELS.items():
-            s, t = load(d / parts[name], level)
-            R[f"carga {name} {lv}"] = t
-            print(f"carga {name:8s} {lv:9s} {t:7.1f} s", flush=True)
-            del s
-
     ref = OUT / "ref.wav"
     ps = ("Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
           "$s.SelectVoice('Microsoft Zira Desktop'); "
@@ -84,25 +77,41 @@ def main():
 
     from tokenizers import Tokenizer
     tok = Tokenizer.from_file(str(d / "tokenizer.json"))
-    for lv in ("basica", "todas"):
-        sessions = {k: load(d / p, LEVELS[lv])[0] for k, p in parts.items()}
-        for text, lang in (("Hola, esto es una prueba de texto a voz hecha en tu ordenador, sin internet.", "es"),
-                           ("The quick brown fox jumps over the lazy dog.", "en")):
-            for stab in (1.0, 0.5):
-                stats: dict = {}
-                eng = tts.ChatterboxTTS("chatterbox-v3", {k: Timed(s, k, stats) for k, s in sessions.items()}, tok)
-                ids = eng.encode(text, lang)
-                t0 = time.perf_counter()
-                wav = eng.synthesize(text, ref, lang, 0.5, stab, 1.0, seed=0)
-                dt = time.perf_counter() - t0
-                key = f"{lv} {lang} estabilidad={stab}"
-                R[key] = {"seg_audio": round(wav.shape[0] / tts.SR, 2), "seg_calculo": round(dt, 1),
-                          "ids_texto": ids.shape[1], "primeros_ids": ids[0, :12].tolist(),
-                          **{k: ({"n": v["n"], "s": round(v["s"], 2)} if isinstance(v, dict) else v)
-                             for k, v in stats.items()}}
-                print(key, json.dumps(R[key], ensure_ascii=False), flush=True)
-                mediaio.save_wav(OUT / f"perfil_{lv}_{lang}_{stab}.wav", wav, tts.SR)
-        del sessions
+    tj = json.loads((d / "tokenizer.json").read_text(encoding="utf-8"))
+    vocab = tj.get("model", {}).get("vocab", {})
+    R["tokenizador"] = {"normalizer": tj.get("normalizer"), "pre_tokenizer": (tj.get("pre_tokenizer") or {}).get("type"),
+                        "post_processor": (tj.get("post_processor") or {}).get("type"), "tam_vocab": tok.get_vocab_size(),
+                        "mayusculas_en_vocab": sum(1 for k in vocab if any(c.isupper() for c in k)),
+                        "tiene_ñ": "ñ" in vocab, "tiene_n_tilde_nfkd": "\u0303" in vocab,
+                        "unk": tj.get("model", {}).get("unk_token")}
+    for t in ("[es]Hola, ¿qué tal? El niño come piña.", "[es]hola, ¿que tal? el nino come pina."):
+        e = tok.encode(t)
+        R["tokenizador"][t] = list(zip(e.tokens, e.ids))[:40]
+    print(json.dumps(R["tokenizador"], ensure_ascii=False, indent=1), flush=True)
+
+    sessions = {k: load(d / p, LEVELS["todas"])[0] for k, p in parts.items()}
+    textos = {"es": "Hola, esto es una prueba de texto a voz hecha en tu ordenador, sin internet.",
+              "es2": "Mañana por la tarde iremos al mercado a comprar fruta, pan y queso para la cena.",
+              "en": "The quick brown fox jumps over the lazy dog."}
+    casos = [("es", "raw", 1.0, 10), ("es", "lower", 1.0, 10), ("es", "raw", 0.5, 10), ("es", "lower", 0.5, 10),
+             ("es2", "raw", 1.0, 10), ("es2", "lower", 1.0, 10), ("es2", "lower", 0.5, 10),
+             ("en", "raw", 1.0, 10), ("en", "raw", 0.5, 10), ("es", "lower", 1.0, 6)]
+    for key_t, mode, stab, refs in casos:
+        stats: dict = {}
+        eng = tts.ChatterboxTTS("chatterbox-v3", {k: Timed(s, k, stats) for k, s in sessions.items()}, tok)
+        eng.text_mode, eng.ref_seconds = mode, refs
+        lang = key_t[:2]
+        text = textos[key_t]
+        t0 = time.perf_counter()
+        wav = eng.synthesize(text, ref, lang, 0.5, stab, 1.0, seed=0)
+        dt = time.perf_counter() - t0
+        key = f"{key_t} texto={mode} estabilidad={stab} ref={refs}s"
+        R[key] = {"seg_audio": round(wav.shape[0] / tts.SR, 2), "seg_calculo": round(dt, 1),
+                  "chars": len(text), **eng.last_stats,
+                  **{k: ({"n": v["n"], "s": round(v["s"], 2)} if isinstance(v, dict) else v)
+                     for k, v in stats.items() if k != "tokens_decoder"}}
+        print(key, json.dumps(R[key], ensure_ascii=False), flush=True)
+        mediaio.save_wav(OUT / f"perfil_{key_t}_{mode}_{stab}_{refs}.wav", wav, tts.SR)
     (OUT / "perfil_tts.json").write_text(json.dumps(R, indent=2, ensure_ascii=False), encoding="utf-8")
 
 

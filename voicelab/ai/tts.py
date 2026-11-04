@@ -120,9 +120,15 @@ class ChatterboxTTS:
         self._external_cancel = cancel is not None
         self._ref_cache: tuple | None = None
         self.info = {"model": model_key, "device": self.device}
+        self.ref_seconds = REF_SECONDS
+        self.text_mode = "raw"
+        self.last_stats: dict = {}
 
     # --------------------------------------------------------------- texto
     def encode(self, text: str, lang: str) -> np.ndarray:
+        if self.text_mode == "lower":                     # como el tokenizador multilingüe oficial
+            import unicodedata
+            text = unicodedata.normalize("NFKD", text.lower())
         if lang == "ko":
             text = korean_normalize(text)
         text = f"[{lang}]{text}" if lang else text
@@ -131,11 +137,11 @@ class ChatterboxTTS:
 
     # ---------------------------------------------------------- referencia
     def reference(self, ref_path: Path) -> tuple:
-        key = (str(ref_path), ref_path.stat().st_mtime)
+        key = (str(ref_path), ref_path.stat().st_mtime, self.ref_seconds)
         if self._ref_cache and self._ref_cache[0] == key:
             return self._ref_cache[1]
         from ..audio import mediaio
-        audio = mediaio.load_audio(ref_path, SR)[: SR * REF_SECONDS]
+        audio = mediaio.load_audio(ref_path, SR)[: int(SR * self.ref_seconds)]
         out = self.s["encoder"].run(None, {"audio_values": audio[None, :].astype(np.float32)})
         self._ref_cache = (key, tuple(out))
         return tuple(out)
@@ -147,10 +153,12 @@ class ChatterboxTTS:
         position_ids = np.where(input_ids >= START, 0, np.arange(input_ids.shape[1])[None, :] - 1).astype(np.int64)
         feed = {"input_ids": input_ids, "position_ids": position_ids,
                 "exaggeration": np.array([exaggeration], dtype=np.float32)}
-        penalty = RepetitionPenalty(1.2)
+        # Estabilidad 100 %: decodificación voraz (como el script de referencia de la exportación ONNX).
+        # Por debajo: muestreo como el Chatterbox oficial (temperatura 0,8 al 50 %, min_p 0,05, penalización 2,0).
+        temperature = 0.0 if stability >= 0.99 else 0.5 + 0.6 * (1.0 - stability)
+        penalty = RepetitionPenalty(1.2 if temperature == 0.0 else 2.0)
         generated = np.array([[START]], dtype=np.int64)
         past, mask = None, None
-        temperature = 0.0 if stability >= 0.99 else 0.35 + 0.9 * (1.0 - stability)
         for i in range(max_new):
             if self.cancelled.is_set():
                 raise TTSError("Generación cancelada.", cancelled=True)
@@ -163,14 +171,17 @@ class ChatterboxTTS:
                 mask = np.ones((b, n), dtype=np.int64)
             logits, *present = self.s["lm"].run(None, {"inputs_embeds": emb, "attention_mask": mask, **past})
             scores = penalty(generated, logits[:, -1, :])
+            # Solo son válidos los tokens de voz (0–6560) y el de fin; el resto rompería el decodificador.
+            scores[:, START] = -np.inf
+            scores[:, STOP + 1:] = -np.inf
             if temperature == 0.0:
                 nxt = np.argmax(scores, axis=-1, keepdims=True).astype(np.int64)
             else:
                 z = scores[0] / temperature
-                top = np.argpartition(z, -50)[-50:]
-                p = np.exp(z[top] - z[top].max())
+                p = np.exp(z - z.max())
+                p[p < 0.05 * p.max()] = 0.0                    # min_p
                 p /= p.sum()
-                nxt = np.array([[top[rng.choice(len(top), p=p)]]], dtype=np.int64)
+                nxt = np.array([[rng.choice(p.shape[0], p=p)]], dtype=np.int64)
             generated = np.concatenate((generated, nxt), axis=1)
             if on_token:
                 on_token(i)
@@ -182,8 +193,10 @@ class ChatterboxTTS:
             for j, k in enumerate(past):
                 past[k] = present[j]
         tokens = generated[:, 1:]
-        if tokens.shape[1] and tokens[0, -1] == STOP:
-            tokens = tokens[:, :-1]
+        stopped = bool(tokens.shape[1] and tokens[0, -1] == STOP)
+        tokens = tokens[:, tokens[0] < START]                  # como «drop_invalid_tokens» del original
+        self.last_stats = {"tokens": int(tokens.shape[1]), "fin": stopped, "max": max_new,
+                           "prompt": int(prompt_token.shape[1])}
         return np.concatenate([prompt_token, tokens], axis=1)
 
     def synthesize(self, text: str, ref_path: Path, lang: str = "es", exaggeration: float = 0.5,
