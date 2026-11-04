@@ -90,29 +90,53 @@ def main():
         R["tokenizador"][t] = list(zip(e.tokens, e.ids))[:40]
     print(json.dumps(R["tokenizador"], ensure_ascii=False, indent=1), flush=True)
 
-    sessions = {k: load(d / p, LEVELS["todas"])[0] for k, p in parts.items()}
+    from faster_whisper import WhisperModel
+    asr = WhisperModel("small", device="cpu", compute_type="int8")
+
+    def oir(wav, lang):
+        import difflib
+        x = mediaio.resample(wav, tts.SR, 16000)
+        segs, _ = asr.transcribe(x, language=lang, beam_size=5)
+        return " ".join(s.text.strip() for s in segs)
+
+    def parecido(a, b):
+        import difflib
+        import re
+        norm = lambda t: re.sub(r"[^a-záéíóúñü ]", "", t.lower())
+        return round(difflib.SequenceMatcher(None, norm(a), norm(b)).ratio(), 2)
+
     textos = {"es": "Hola, esto es una prueba de texto a voz hecha en tu ordenador, sin internet.",
               "es2": "Mañana por la tarde iremos al mercado a comprar fruta, pan y queso para la cena.",
               "en": "The quick brown fox jumps over the lazy dog."}
-    casos = [("es", "raw", 1.0, 10), ("es", "lower", 1.0, 10), ("es", "raw", 0.5, 10), ("es", "lower", 0.5, 10),
-             ("es2", "raw", 1.0, 10), ("es2", "lower", 1.0, 10), ("es2", "lower", 0.5, 10),
-             ("en", "raw", 1.0, 10), ("en", "raw", 0.5, 10), ("es", "lower", 1.0, 6)]
-    for key_t, mode, stab, refs in casos:
-        stats: dict = {}
-        eng = tts.ChatterboxTTS("chatterbox-v3", {k: Timed(s, k, stats) for k, s in sessions.items()}, tok)
-        eng.text_mode, eng.ref_seconds = mode, refs
-        lang = key_t[:2]
-        text = textos[key_t]
-        t0 = time.perf_counter()
-        wav = eng.synthesize(text, ref, lang, 0.5, stab, 1.0, seed=0)
-        dt = time.perf_counter() - t0
-        key = f"{key_t} texto={mode} estabilidad={stab} ref={refs}s"
-        R[key] = {"seg_audio": round(wav.shape[0] / tts.SR, 2), "seg_calculo": round(dt, 1),
-                  "chars": len(text), **eng.last_stats,
-                  **{k: ({"n": v["n"], "s": round(v["s"], 2)} if isinstance(v, dict) else v)
-                     for k, v in stats.items() if k != "tokens_decoder"}}
-        print(key, json.dumps(R[key], ensure_ascii=False), flush=True)
-        mediaio.save_wav(OUT / f"perfil_{key_t}_{mode}_{stab}_{refs}.wav", wav, tts.SR)
+    modelos = [m for m in ("chatterbox-v3", "chatterbox-v2") if m in models.CATALOG]
+    for mk in modelos:
+        if not models.installed(mk):
+            t0 = time.perf_counter()
+            models.install(mk, lambda p: None)
+            print(f"descarga {mk}: {time.perf_counter() - t0:.0f} s", flush=True)
+        dm = models.model_dir(mk)
+        sp = models.CATALOG[mk]
+        partes = {"encoder": "onnx/speech_encoder.onnx", "embed": "onnx/embed_tokens.onnx", "lm": sp["lm"],
+                  "decoder": "onnx/conditional_decoder.onnx"}
+        sessions = {k: load(dm / p, LEVELS["todas"])[0] for k, p in partes.items()}
+        tokm = Tokenizer.from_file(str(dm / "tokenizer.json"))
+        casos = [("es", None, 1.0), ("es2", None, 1.0), ("es", "", 1.0), ("en", None, 1.0), ("es", None, 0.9)]
+        for key_t, tag, stab in casos:
+            stats: dict = {}
+            eng = tts.ChatterboxTTS(mk, {k: Timed(s, k, stats) for k, s in sessions.items()}, tokm)
+            eng.lang_tag = tag
+            lang = key_t[:2]
+            text = textos[key_t]
+            t0 = time.perf_counter()
+            wav = eng.synthesize(text, ref, lang, 0.5, stab, 1.0, seed=0)
+            dt = time.perf_counter() - t0
+            heard = oir(wav, lang)
+            key = f"{mk} {key_t} etiqueta={tag!r} estabilidad={stab}"
+            R[key] = {"seg_audio": round(wav.shape[0] / tts.SR, 2), "seg_calculo": round(dt, 1), **eng.last_stats,
+                      "oido": heard, "parecido": parecido(heard, text),
+                      "decoder_s": round(stats.get("decoder", {}).get("s", 0), 1)}
+            print(key, json.dumps(R[key], ensure_ascii=False), flush=True)
+        del sessions
     (OUT / "perfil_tts.json").write_text(json.dumps(R, indent=2, ensure_ascii=False), encoding="utf-8")
 
 

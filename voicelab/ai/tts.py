@@ -122,6 +122,7 @@ class ChatterboxTTS:
         self.info = {"model": model_key, "device": self.device}
         self.ref_seconds = REF_SECONDS
         self.text_mode = "raw"
+        self.lang_tag: str | None = None      # None: el del idioma; "" sin etiqueta (pruebas)
         self.last_stats: dict = {}
 
     # --------------------------------------------------------------- texto
@@ -131,7 +132,8 @@ class ChatterboxTTS:
             text = unicodedata.normalize("NFKD", text.lower())
         if lang == "ko":
             text = korean_normalize(text)
-        text = f"[{lang}]{text}" if lang else text
+        tag = self.lang_tag if self.lang_tag is not None else lang
+        text = f"[{tag}]{text}" if tag else text
         ids = self.tok.encode(text).ids
         return np.array([ids], dtype=np.int64)
 
