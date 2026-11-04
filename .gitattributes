@@ -1,2 +1,7 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Windows necesita CRLF en los .bat; los .ps1 llevan BOM (los prepara tools/package.py para el ZIP).
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.iss text eol=crlf
+*.exe binary
+*.ico binary
+*.png binary

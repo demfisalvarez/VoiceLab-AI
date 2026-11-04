@@ -1,0 +1,244 @@
+"""Proceso aparte para la «Voz instantánea en directo» (MeanVC2, PyTorch en CPU).
+
+Se ejecuta con el Python del entorno ``vc-runtime`` (donde está PyTorch), nunca
+dentro de la aplicación principal: así el audio en tiempo real no compite con
+el intérprete de PyTorch por el GIL y, si algo falla, la app sigue en pie.
+
+Protocolo binario por stdin/stdout. Cada mensaje es::
+
+    1 byte de tipo · 4 bytes de longitud (uint32, little endian) · datos
+
+Peticiones (app → proceso):
+    E  float32[256]   fijar la huella de voz (embedding) del hablante destino
+    R  float32[n]     calcular la huella a partir de audio de referencia a 16 kHz
+    A  float32[n]     convertir un bloque de 2560 muestras a 16 kHz
+    Z  -              reiniciar el estado del streaming
+    Q  -              terminar
+
+Respuestas (proceso → app):
+    J  JSON           estado / errores (``{"ok": true, ...}``)
+    E  float32[256]   huella calculada
+    A  float32[m]     audio convertido a 16 kHz (m puede ser 0)
+
+Este archivo no importa nada de VoiceLab: la app lo lanza por ruta con
+``python -I meanvc_worker.py --code … --weights …``.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import struct
+import sys
+
+HEADER = struct.Struct("<cI")
+SR = 16000
+CHUNK = 2560
+EMB_DIM = 256
+MAX_REF_S = 30
+
+# Arquitectura de WavLM-Large (la misma que el «cfg» de WavLM-Large.pt y que
+# config.json de microsoft/wavlm-large). Evita descargar 1,26 GB solo para
+# leer esta configuración. Los pesos se validan al cargarlos: si la estructura
+# no encajara, faltarían pesos y el proceso lo avisa en vez de seguir.
+WAVLM_LARGE_CFG = {
+    "extractor_mode": "layer_norm",
+    "encoder_layers": 24,
+    "encoder_embed_dim": 1024,
+    "encoder_ffn_embed_dim": 4096,
+    "encoder_attention_heads": 16,
+    "activation_fn": "gelu",
+    "layer_norm_first": True,
+    "conv_feature_layers": "[(512,10,5)] + [(512,3,2)] * 4 + [(512,2,2)] * 2",
+    "conv_bias": False,
+    "feature_grad_mult": 0.0,
+    "normalize": True,
+    "dropout": 0.0, "attention_dropout": 0.0, "activation_dropout": 0.0,
+    "encoder_layerdrop": 0.0, "dropout_input": 0.0, "dropout_features": 0.0,
+    "conv_pos": 128,
+    "conv_pos_groups": 16,
+    "relative_position_embedding": True,
+    "num_buckets": 320,
+    "max_distance": 800,
+    "gru_rel_pos": True,
+}
+
+WEIGHT_FILES = {
+    "120ms": ("fastu2pp_160ms.pt", "meanvc2_120ms_40ms.safetensors", "vocos.pt"),
+    "40ms": ("fastu2pp_80ms.pt", "meanvc2_40ms_40ms.safetensors", "vocos.pt"),
+}
+SPEAKER_FILE = "wavlm_large_finetune.pth"
+
+
+# ------------------------------------------------------------------ protocolo
+def read_exact(f, n: int) -> bytes:
+    buf = bytearray()
+    while len(buf) < n:
+        part = f.read(n - len(buf))
+        if not part:
+            raise EOFError("canal cerrado")
+        buf += part
+    return bytes(buf)
+
+
+def send(f, kind: bytes, payload: bytes = b"") -> None:
+    f.write(HEADER.pack(kind, len(payload)))
+    if payload:
+        f.write(payload)
+    f.flush()
+
+
+def recv(f) -> tuple[bytes, bytes]:
+    kind, n = HEADER.unpack(read_exact(f, HEADER.size))
+    return kind, (read_exact(f, n) if n else b"")
+
+
+def send_json(f, obj: dict) -> None:
+    send(f, b"J", json.dumps(obj, ensure_ascii=False).encode("utf-8"))
+
+
+# --------------------------------------------------------------------- modelo
+class Engine:
+    def __init__(self, code: str, weights: str, model: str, threads: int = 1):
+        import numpy as np
+        import torch
+
+        self.np, self.torch = np, torch
+        self.weights, self.model = weights, model
+        missing = [f for f in WEIGHT_FILES[model] if not os.path.isfile(os.path.join(weights, f))]
+        if missing:
+            raise FileNotFoundError("Faltan archivos del modelo: " + ", ".join(missing))
+        sys.path.insert(0, code)
+        sys.path.insert(0, os.path.join(code, "runtime"))
+
+        # Los modelos TorchScript se cargan siempre en la CPU.
+        _jit_load = torch.jit.load
+        torch.jit.load = lambda f, *a, **k: _jit_load(f, *a, **{"map_location": "cpu", **k})
+
+        import run_rt  # MeanVC2 sin modificar
+
+        paths = run_rt.MODEL_PATHS[model]
+        paths["asr_ckpt"] = os.path.join(weights, os.path.basename(paths["asr_ckpt"]))
+        paths["ckpt"] = os.path.join(weights, os.path.basename(paths["ckpt"]))
+        run_rt.VOCODER_PATH = os.path.join(weights, "vocos.pt")
+        # La huella del hablante se calcula aparte (y se guarda en el perfil),
+        # así el modelo de 1,3 GB solo se carga cuando hace falta.
+        run_rt.init_speaker_model = lambda *a, **k: None
+        run_rt.extract_embedding = lambda *a, **k: torch.zeros(1, EMB_DIM)
+        self.runner = run_rt.VCRunner(target_wav="", device="cpu", model=model)
+        torch.set_num_threads(max(1, threads))
+        torch.manual_seed(0)
+        self.has_speaker = False
+        silence = np.zeros(CHUNK, np.float32)
+        for _ in range(3):                       # calentamiento de TorchScript
+            self.runner.process_chunk(silence)
+        self.runner._init_cache()
+
+    def set_embedding(self, emb) -> None:
+        t = self.torch.from_numpy(emb.reshape(1, EMB_DIM).astype("float32").copy())
+        with self.torch.no_grad():
+            self.runner.vc_spk_emb = t
+            self.runner.vc_gtm_kv = self.runner.vc.gtm(t)
+        self.runner._init_cache()
+        self.has_speaker = True
+
+    def compute_embedding(self, audio):
+        import gc
+
+        torch, np = self.torch, self.np
+        from src.speaker import ECAPA_TDNN_SMALL
+
+        ckpt = os.path.join(self.weights, SPEAKER_FILE)
+        if not os.path.isfile(ckpt):
+            raise FileNotFoundError("Falta " + SPEAKER_FILE)
+        cfg = os.path.join(self.weights, "wavlm_large_cfg.pt")
+        if not os.path.isfile(cfg):
+            torch.save(dict(WAVLM_LARGE_CFG), cfg)
+        audio = audio[: MAX_REF_S * SR]
+        model = ECAPA_TDNN_SMALL(feat_dim=1024, emb_dim=EMB_DIM, feat_type="wavlm_large",
+                                 feature_selection="hidden_states", update_extract=False, config_path=cfg)
+        state = torch.load(ckpt, map_location="cpu", weights_only=True)
+        if isinstance(state, dict) and "model" in state:
+            state = state["model"]
+        res = model.load_state_dict(state, strict=False)
+        lost = [k for k in res.missing_keys if not k.endswith("num_batches_tracked")]
+        if lost:
+            raise RuntimeError(f"El codificador de hablante no coincide con sus pesos ({len(lost)} sin cargar, p. ej. {lost[:3]})")
+        model.eval()
+        threads = torch.get_num_threads()
+        torch.set_num_threads(max(threads, min(8, os.cpu_count() or 1)))   # cálculo puntual: más núcleos
+        try:
+            with torch.no_grad():
+                emb = model(torch.from_numpy(np.ascontiguousarray(audio, np.float32)).unsqueeze(0))
+        finally:
+            torch.set_num_threads(threads)
+        del model, state
+        gc.collect()
+        return emb.reshape(-1).numpy().astype(np.float32)
+
+    def process(self, chunk):
+        out = self.runner.process_chunk(chunk.astype(self.np.float32))
+        return self.np.zeros(0, self.np.float32) if out is None else self.np.asarray(out, self.np.float32)
+
+
+def main(argv=None) -> int:
+    import argparse
+    import traceback
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--code", required=True)
+    ap.add_argument("--weights", required=True)
+    ap.add_argument("--model", default="120ms", choices=tuple(WEIGHT_FILES))
+    ap.add_argument("--threads", type=int, default=1)
+    args = ap.parse_args(argv)
+
+    # El canal binario es una copia de stdout; cualquier print() de las
+    # bibliotecas acaba en stderr (el registro) y no puede corromperlo.
+    out = os.fdopen(os.dup(sys.stdout.fileno()), "wb")
+    os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+    sys.stdout = sys.stderr
+    inp = sys.stdin.buffer
+
+    try:
+        import numpy as np
+        eng = Engine(args.code, args.weights, args.model, args.threads)
+    except Exception as exc:  # noqa: BLE001
+        traceback.print_exc()
+        msg = f"{type(exc).__name__}: {exc}"
+        if "dll" in msg.lower():
+            msg += (" — Puede faltar el «Microsoft Visual C++ Redistributable (x64)»: instálalo desde "
+                    "https://aka.ms/vs/17/release/vc_redist.x64.exe y vuelve a intentarlo.")
+        send_json(out, {"ok": False, "error": msg})
+        return 2
+    import torch
+    send_json(out, {"ok": True, "model": args.model, "chunk": CHUNK, "sr": SR, "torch": torch.__version__})
+
+    while True:
+        try:
+            kind, data = recv(inp)
+        except EOFError:
+            return 0
+        try:
+            if kind == b"A":
+                if not eng.has_speaker:
+                    raise RuntimeError("No se ha fijado la voz de destino")
+                send(out, b"A", eng.process(np.frombuffer(data, np.float32)).tobytes())
+            elif kind == b"E":
+                eng.set_embedding(np.frombuffer(data, np.float32))
+                send_json(out, {"ok": True})
+            elif kind == b"R":
+                send(out, b"E", eng.compute_embedding(np.frombuffer(data, np.float32)).tobytes())
+            elif kind == b"Z":
+                eng.runner._init_cache()
+                send_json(out, {"ok": True})
+            elif kind == b"Q":
+                return 0
+            else:
+                send_json(out, {"ok": False, "error": f"petición desconocida {kind!r}"})
+        except Exception as exc:  # noqa: BLE001
+            traceback.print_exc()
+            send_json(out, {"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+
+
+if __name__ == "__main__":
+    sys.exit(main())

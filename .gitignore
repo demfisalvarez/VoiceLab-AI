@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+build/work/
+build/.venv/
+ui_shots/
+launcher/*.syso
+ci-out/
+registros/
+resultados/
+*.part

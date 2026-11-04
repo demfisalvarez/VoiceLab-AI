@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VoiceLab AI</title>
+  <link rel="icon" href="assets/logo.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="boot" id="boot">
+  <div class="boot-inner"><img src="assets/logo.svg" alt=""><span id="boot-msg">Iniciando el motor de audio…</span></div>
+</div>
+
+<div class="app">
+  <!-- ============================================================ barra lateral -->
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="assets/logo.svg" alt="">
+      <div>
+        <div class="brand-name">VoiceLab <span>AI</span></div>
+        <div class="brand-sub" id="brand-sub">Estudio de voz</div>
+      </div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <div class="nav-label">Estudio</div>
+      <button class="nav-item" data-page="home"><i data-icon="home"></i><span class="grow">Inicio</span></button>
+      <button class="nav-item" data-page="modulator"><i data-icon="waves"></i><span class="grow">Modulador</span><span class="live-dot" id="nav-live"></span></button>
+      <button class="nav-item" data-page="library"><i data-icon="library"></i><span class="grow">Biblioteca de voces</span></button>
+      <button class="nav-item" data-page="clone"><i data-icon="voice"></i><span class="grow">Clonar voz</span></button>
+      <button class="nav-item" data-page="create"><i data-icon="record"></i><span class="grow">Crear voz</span></button>
+      <button class="nav-item" data-page="tts"><i data-icon="tts"></i><span class="grow">Texto a voz</span></button>
+      <button class="nav-item" data-page="editor"><i data-icon="editor"></i><span class="grow">Editor de audio</span></button>
+      <div class="nav-label">Sistema</div>
+      <button class="nav-item" data-page="settings"><i data-icon="sliders"></i><span class="grow">Ajustes</span></button>
+    </nav>
+
+    <!-- Acceso rápido permanente al modulador -->
+    <div class="dock" id="dock">
+      <div class="dock-head">
+        <button class="power small" id="dock-power" title="Activar o desactivar el modulador (Ctrl+M)" aria-label="Activar o desactivar el modulador"><i data-icon="power"></i></button>
+        <div style="min-width:0">
+          <div class="dock-title">Modulador</div>
+          <div class="dock-sub" id="dock-sub">Detenido</div>
+        </div>
+      </div>
+      <div class="dock-meters">
+        <div class="dock-row"><span>ENT</span><div class="meter-h thin" data-meter="dock-in"><div class="fill"></div><div class="peak"></div></div></div>
+        <div class="dock-row"><span>SAL</span><div class="meter-h thin" data-meter="dock-out"><div class="fill"></div><div class="peak"></div></div></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============================================================ contenido -->
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h1 id="page-title">Inicio</h1>
+        <div class="subtitle" id="page-subtitle"></div>
+      </div>
+      <div class="spacer"></div>
+      <span class="chip" id="chip-latency" title="Latencia total estimada de la voz">Latencia <b class="num" id="chip-latency-v">—</b></span>
+      <span class="chip" id="chip-state"><span class="live-dot" id="chip-dot"></span><span id="chip-state-t">Detenido</span></span>
+    </header>
+
+    <div class="content" id="content">
+
+      <!-- ======================================================== INICIO -->
+      <section class="page" id="page-home" data-title="Inicio" data-subtitle="Estado del estudio y primeros pasos">
+        <div class="grid home">
+          <div class="card hero">
+            <div class="hero-grid">
+              <div>
+                <h2>Tu voz, en directo y en cualquier app</h2>
+                <p>Habla por tu micrófono y VoiceLab AI envía la señal procesada al micrófono virtual de Windows para Discord, Steam, juegos y videollamadas.</p>
+                <div class="hero-actions">
+                  <button class="btn primary" id="home-power"><i data-icon="power"></i><span>Activar modulador</span></button>
+                  <button class="btn" data-goto="modulator"><span>Abrir modulador</span><i data-icon="chevron"></i></button>
+                </div>
+              </div>
+              <div class="hero-stat"><div class="big-latency num" id="home-latency">—<small>ms</small></div><div class="hero-stat-label">Latencia de tu voz</div></div>
+            </div>
+            <div class="spectrum" id="home-spectrum" aria-hidden="true"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="icon-box green"><i data-icon="check"></i></div>
+              <div><h3 class="card-title">Configuración inicial</h3><div class="card-desc">Lo necesario para usar tu voz en otras aplicaciones</div></div>
+            </div>
+            <div class="checklist" id="checklist"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="icon-box cyan"><i data-icon="cpu"></i></div>
+              <div><h3 class="card-title">Tu equipo</h3><div class="card-desc">Detectado automáticamente</div></div>
+            </div>
+            <dl class="kv" id="home-system"></dl>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="icon-box"><i data-icon="sparkles"></i></div>
+              <div><h3 class="card-title">Hoja de ruta</h3><div class="card-desc">Cada fase se entrega probada antes de pasar a la siguiente</div></div>
+            </div>
+            <div class="roadmap" id="roadmap"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================================================== MODULADOR -->
+      <section class="page" id="page-modulator" data-title="Modulador en tiempo real" data-subtitle="Micrófono → procesado → micrófono virtual, monitor y salida auxiliar">
+        <div class="card">
+          <div class="console">
+            <div class="power-panel">
+              <button class="power xl" id="mod-power" aria-label="Activar o desactivar el modulador"><i data-icon="power"></i></button>
+              <div class="power-state" id="mod-state">Detenido</div>
+              <div class="power-sub" id="mod-sub">Pulsa para empezar · <span class="kbd">Ctrl</span> + <span class="kbd">M</span></div>
+              <div class="big-latency num" id="mod-latency" title="Latencia total estimada">—<small>ms</small></div>
+            </div>
+
+            <div class="vmeter-panel">
+              <div class="vmeter-head"><span class="title">Entrada</span><span class="db num" id="in-db">—<small> dB</small></span></div>
+              <div class="vmeter-body">
+                <div class="vbar" data-vmeter="in-peak"><div class="fill"></div><div class="peak"></div><div class="clip" id="in-clip"></div></div>
+                <div class="vbar rms" data-vmeter="in-rms"><div class="fill"></div></div>
+                <div class="scale num"><span>0</span><span>-12</span><span>-24</span><span>-36</span><span>-48</span><span>-60</span></div>
+              </div>
+              <div class="vmeter-foot"><span id="in-device">Sin micrófono activo</span><span>Pico · RMS</span></div>
+            </div>
+
+            <div class="vmeter-panel">
+              <div class="vmeter-head"><span class="title">Salida</span><span class="db num" id="out-db">—<small> dB</small></span></div>
+              <div class="vmeter-body">
+                <div class="vbar" data-vmeter="out-peak"><div class="fill"></div><div class="peak"></div><div class="clip" id="out-clip"></div></div>
+                <div class="vbar rms" data-vmeter="out-rms"><div class="fill"></div></div>
+                <div class="scale num"><span>0</span><span>-12</span><span>-24</span><span>-36</span><span>-48</span><span>-60</span></div>
+              </div>
+              <div class="vmeter-foot"><span id="out-target">Voz procesada</span><span>Pico · RMS</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid cols-2" style="margin-top:18px">
+          <div class="card">
+            <div class="card-head">
+              <div class="icon-box"><i data-icon="mic"></i></div>
+              <div><h3 class="card-title">Entrada</h3><div class="card-desc" id="mod-input-name">Micrófono</div></div>
+              <div class="spacer"></div>
+              <button class="btn sm ghost" data-goto="settings">Cambiar</button>
+            </div>
+            <div class="field">
+              <div class="field-label">Ganancia de entrada</div>
+              <div class="range-field" data-range="audio.input_gain_db" data-min="-24" data-max="24" data-step="0.5"><input type="range"><input type="number"><span class="unit">dB</span></div>
+            </div>
+            <div class="field">
+              <div class="field-label"><span>Puerta de ruido</span><span class="led" id="gate-led" title="Abierta: deja pasar la voz"></span><span class="small muted" id="gate-state"></span><span class="spacer"></span><button class="switch" role="switch" data-switch="audio.gate_enabled" aria-label="Puerta de ruido"></button></div>
+              <div class="range-field" data-range="audio.gate_threshold_db" data-min="-80" data-max="0" data-step="1"><input type="range"><input type="number"><span class="unit">dB</span></div>
+              <div class="field-hint">Silencia el micrófono cuando no hablas. Sube el umbral si se cuelan ruidos de fondo.</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="icon-box cyan"><i data-icon="voice"></i></div>
+              <div style="min-width:0"><h3 class="card-title">Voz activa</h3><div class="card-desc" id="voice-name">Voz original</div></div>
+            </div>
+            <div class="field">
+              <div class="field-label">Perfil guardado</div>
+              <select id="profile-quick"></select>
+              <div class="field-hint">Cambia de perfil al instante, sin detener el modulador.</div>
+            </div>
+            <div class="row wrap" style="margin-top:14px">
+              <button class="btn sm" id="voice-save-new"><i data-icon="plus"></i>Guardar como perfil nuevo</button>
+              <button class="btn sm" id="voice-save-current" hidden><i data-icon="check"></i>Guardar cambios en el perfil</button>
+              <button class="btn sm ghost" id="voice-reset"><i data-icon="refresh"></i>Voz original</button>
+            </div>
+            <div id="ai-voice" style="margin-top:14px"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:18px">
+          <div class="card-head">
+            <div class="icon-box"><i data-icon="route"></i></div>
+            <div><h3 class="card-title">Salidas</h3><div class="card-desc">Puedes activar varias a la vez y cambiarlas sin detener el modulador</div></div>
+          </div>
+          <div id="routes"></div>
+        </div>
+
+        <div class="card" style="margin-top:18px" id="fx-card">
+          <div class="card-head">
+            <div class="icon-box"><i data-icon="sliders"></i></div>
+            <div><h3 class="card-title">Efectos y preajustes</h3><div class="card-desc">Los cambios se oyen al momento. Todos los valores son personalizables.</div></div>
+          </div>
+          <div class="presets" id="presets"></div>
+          <div class="fx-grid" id="fx-grid"></div>
+        </div>
+      </section>
+
+      <!-- ==================================================== BIBLIOTECA -->
+      <section class="page" id="page-library" data-title="Biblioteca de voces" data-subtitle="Tus perfiles, guardados en este equipo">
+        <div class="card lib-toolbar">
+          <input type="search" id="lib-search" placeholder="Buscar perfiles…" aria-label="Buscar perfiles">
+          <select id="lib-folder" aria-label="Carpeta"></select>
+          <select id="lib-type" aria-label="Tipo">
+            <option value="">Todos los tipos</option><option value="effects">Efectos</option>
+            <option value="instant">IA instantánea</option><option value="rvc">IA entrenada (RVC)</option>
+          </select>
+          <span class="spacer"></span>
+          <button class="btn sm" id="lib-import-rvc"><i data-icon="sparkles"></i>Importar modelo RVC</button>
+          <button class="btn sm" id="lib-import"><i data-icon="download"></i>Importar</button>
+          <input type="file" id="rvc-file" accept=".onnx" hidden>
+          <button class="btn sm" id="lib-backup"><i data-icon="archive"></i>Copia de seguridad</button>
+          <input type="file" id="lib-import-file" accept=".vlprofile,.zip" hidden>
+        </div>
+        <div class="lib-grid" id="lib-grid"></div>
+      </section>
+      <section class="page" id="page-clone" data-title="Clonar voz" data-subtitle="Crea un perfil de voz con IA a partir de un audio o vídeo">
+        <div class="grid cols-2">
+          <div class="card span-2">
+            <div class="card-head"><div class="icon-box"><i data-icon="upload"></i></div>
+              <div><h3 class="card-title">1 · Audio de origen</h3><div class="card-desc">MP3, WAV, FLAC, M4A, AAC, OGG, MP4, MKV, MOV o WEBM. De los vídeos se extrae el audio automáticamente.</div></div></div>
+            <div class="drop" data-drop="clone"><i data-icon="upload"></i><div><b>Arrastra aquí un archivo</b> o <button class="link" data-import="clone">elígelo en tu equipo</button></div>
+              <select data-item-select="clone" aria-label="Audio del espacio de trabajo"></select></div>
+          </div>
+          <div class="card span-2" id="clone-step2" hidden>
+            <div class="card-head"><div class="icon-box cyan"><i data-icon="editor"></i></div>
+              <div><h3 class="card-title">2 · Elige el fragmento con la voz</h3><div class="card-desc">Arrastra sobre la onda para seleccionar. Lo ideal: 10–30 s de una sola persona hablando con claridad.</div></div></div>
+            <div class="wave" data-wave="clone"></div>
+            <div class="row wrap wave-bar">
+              <button class="btn sm" data-play="clone"><i data-icon="play"></i>Escuchar selección</button>
+              <button class="btn sm ghost" data-stop>Detener</button>
+              <span class="small muted num" data-wave-info="clone"></span><span class="spacer"></span>
+              <button class="btn sm" id="clone-analyze"><i data-icon="gauge"></i>Analizar la voz</button>
+            </div>
+            <div id="clone-analysis"></div>
+          </div>
+          <div class="card span-2" id="clone-step3" hidden>
+            <div class="card-head"><div class="icon-box green"><i data-icon="voice"></i></div>
+              <div><h3 class="card-title">3 · Crear el perfil</h3><div class="card-desc">Perfil de IA instantánea (Chatterbox Multilingual): conserva timbre, acento y forma de hablar a partir de la referencia.</div></div></div>
+            <div class="grid cols-2">
+              <div style="display:grid;gap:10px">
+                <input type="text" id="clone-name" placeholder="Nombre del perfil" maxlength="80">
+                <input type="text" id="clone-folder" placeholder="Carpeta (opcional)" maxlength="60">
+                <textarea id="clone-desc" rows="2" placeholder="Descripción (opcional)"></textarea>
+              </div>
+              <div style="display:grid;gap:10px;align-content:start">
+                <select id="clone-lang"><option value="es">Español</option><option value="en">Inglés</option><option value="fr">Francés</option><option value="de">Alemán</option><option value="it">Italiano</option><option value="pt">Portugués</option><option value="nl">Neerlandés</option><option value="pl">Polaco</option><option value="ja">Japonés</option><option value="zh">Chino</option></select>
+                <label class="checkbox"><input type="checkbox" id="clone-clean" checked> Limpiar ruido de fondo y silencios largos</label>
+                <label class="checkbox"><input type="radio" name="consent" value="own"> Es mi propia voz</label>
+                <label class="checkbox"><input type="radio" name="consent" value="authorized"> Tengo autorización de la persona para clonar su voz</label>
+              </div>
+            </div>
+            <div class="notice info" style="margin-top:14px"><i data-icon="info"></i><div>El perfil guarda una referencia limpia de tu selección. La voz se sintetiza con el motor de IA local (Texto a voz). Si hay 5 minutos o más de voz, también se guarda el material para entrenar un modelo RVC para el modulador en tiempo real.</div></div>
+            <div class="row" style="margin-top:14px"><span class="spacer"></span><button class="btn primary" id="clone-create"><i data-icon="sparkles"></i>Crear perfil de voz</button></div>
+          </div>
+        </div>
+      </section>
+      <section class="page" id="page-create" data-title="Crear voz" data-subtitle="Estudio de grabación: graba tu voz para crear perfiles nuevos">
+        <div class="grid home">
+          <div class="card rec-card">
+            <button class="rec-btn" id="rec-btn" aria-label="Grabar"><span></span></button>
+            <div class="rec-time num" id="rec-time">00:00</div>
+            <div class="meter-h" data-meter="rec" style="width:100%"><div class="fill"></div><div class="peak"></div></div>
+            <div class="small muted" id="rec-device">Micrófono: —</div>
+            <div class="notice info"><i data-icon="info"></i><div>Para clonar bien: habitación silenciosa, a un palmo del micrófono, con naturalidad. Para un perfil instantáneo bastan 20–30 s; para entrenar un modelo RVC, 10–30 minutos con variedad de tonos y emociones.</div></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div class="icon-box"><i data-icon="tts"></i></div><div><h3 class="card-title">Texto para leer</h3><div class="card-desc">Frases variadas que cubren los sonidos del español</div></div></div>
+            <div class="read-text" id="read-text"></div>
+            <div class="row" style="margin-top:10px"><button class="btn sm ghost" id="read-next"><i data-icon="refresh"></i>Otro texto</button><span class="spacer"></span><button class="btn sm ghost" data-goto="modulator">Modificar mi voz con efectos y guardarla como perfil</button></div>
+          </div>
+          <div class="card span-2">
+            <div class="card-head"><div class="icon-box cyan"><i data-icon="record"></i></div><div><h3 class="card-title">Tus grabaciones</h3><div class="card-desc">Escúchalas, recórtalas en el editor o úsalas para clonar</div></div></div>
+            <div id="rec-list"></div>
+          </div>
+        </div>
+      </section>
+      <section class="page" id="page-tts" data-title="Texto a voz" data-subtitle="Convierte cualquier texto en audio con tus voces clonadas">
+        <div class="grid home">
+          <div class="card">
+            <div id="tts-engine-note"></div>
+            <textarea id="tts-text" rows="12" placeholder="Escribe o pega aquí el texto. Los textos largos se dividen por frases automáticamente." maxlength="20000"></textarea>
+            <div class="row" style="margin-top:8px"><span class="small muted num" id="tts-count">0 caracteres</span><span class="spacer"></span>
+              <button class="btn ghost sm" id="tts-cancel" hidden>Cancelar</button>
+              <button class="btn primary" id="tts-go"><i data-icon="sparkles"></i>Generar audio</button></div>
+          </div>
+          <div class="card" style="display:grid;gap:14px;align-content:start">
+            <div class="field"><div class="field-label">Voz</div><select id="tts-voice"></select></div>
+            <div class="field"><div class="field-label">Idioma</div><select id="tts-lang"></select></div>
+            <div class="fx-row"><div class="field-label">Velocidad</div><div class="range-field" data-tts="speed"><input type="range" min="0.5" max="2" step="0.05" value="1"><input type="number" min="0.5" max="2" step="0.05" value="1"><span class="unit">×</span></div></div>
+            <div class="fx-row"><div class="field-label">Estabilidad</div><div class="range-field" data-tts="stability"><input type="range" min="0" max="100" step="1" value="100"><input type="number" min="0" max="100" step="1" value="100"><span class="unit">%</span></div></div>
+            <div class="fx-row"><div class="field-label">Expresividad</div><div class="range-field" data-tts="expressivity"><input type="range" min="25" max="200" step="5" value="50"><input type="number" min="25" max="200" step="5" value="50"><span class="unit">%</span></div></div>
+            <div class="field-hint">Similitud: el motor ONNX actual no expone ese control (la exportación sin guía CFG); la voz se ajusta siempre a la referencia del perfil.</div>
+          </div>
+          <div class="card span-2">
+            <div class="card-head"><div class="icon-box cyan"><i data-icon="waves"></i></div><div><h3 class="card-title">Generaciones</h3><div class="card-desc">Se guardan en tu espacio de trabajo: escúchalas, edítalas o descárgalas</div></div></div>
+            <div id="tts-list"></div>
+          </div>
+        </div>
+      </section>
+      <section class="page" id="page-editor" data-title="Editor de audio" data-subtitle="Recorta, une, limpia, aplica efectos y exporta">
+        <div class="editor">
+          <div class="card ed-side">
+            <div class="row"><b class="grow">Audios</b><button class="btn sm" data-import="editor"><i data-icon="upload"></i>Importar</button></div>
+            <div class="drop small-drop" data-drop="editor">Arrastra archivos aquí</div>
+            <div id="ed-list"></div>
+            <button class="btn sm" id="ed-join" disabled><i data-icon="plus"></i>Unir seleccionados</button>
+          </div>
+          <div class="card ed-main" id="ed-main">
+            <div class="ed-empty muted" id="ed-empty">Importa o graba un audio para empezar.</div>
+            <div id="ed-work" hidden>
+              <div class="row"><input type="text" id="ed-name" class="ed-name" maxlength="120"><span class="small muted num" id="ed-dur"></span></div>
+              <div class="wave tall" data-wave="editor"></div>
+              <div class="row wrap wave-bar">
+                <button class="btn sm" data-play="editor"><i data-icon="play"></i>Reproducir</button>
+                <button class="btn sm ghost" data-stop>Detener</button>
+                <span class="small muted num" data-wave-info="editor"></span><span class="spacer"></span>
+                <button class="btn sm ghost" data-op="undo"><i data-icon="refresh"></i>Deshacer</button>
+              </div>
+              <div class="ed-tools">
+                <div><div class="field-label">Selección</div><div class="row wrap">
+                  <button class="btn sm" data-op="crop">Recortar</button><button class="btn sm" data-op="delete">Eliminar</button>
+                  <button class="btn sm" data-op="silence">Silenciar</button><button class="btn sm" data-op="split">Dividir en el cursor</button>
+                  <button class="btn sm" data-op="fade_in">Fundido de entrada</button><button class="btn sm" data-op="fade_out">Fundido de salida</button></div></div>
+                <div><div class="field-label">Volumen y limpieza</div><div class="row wrap">
+                  <input type="number" id="ed-db" value="3" step="0.5" min="-24" max="24" style="width:70px"><button class="btn sm" data-op="gain">Aplicar dB</button>
+                  <button class="btn sm" data-op="normalize">Normalizar</button><button class="btn sm" data-op="remove_silences">Eliminar silencios</button>
+                  <button class="btn sm" data-op="denoise">Reducir ruido</button></div></div>
+                <div><div class="field-label">Efectos y tiempo</div><div class="row wrap">
+                  <select id="ed-fx" style="width:auto"></select><button class="btn sm" data-op="effects">Aplicar efectos</button>
+                  <input type="number" id="ed-rate" value="1.25" step="0.05" min="0.5" max="2" style="width:70px">
+                  <button class="btn sm" data-op="tempo">Tempo (sin cambiar tono)</button><button class="btn sm" data-op="speed">Velocidad</button></div></div>
+                <div><div class="field-label">Archivo</div><div class="row wrap">
+                  <select id="ed-fmt" style="width:auto"><option>wav</option><option>mp3</option><option>flac</option><option>ogg</option></select>
+                  <button class="btn sm primary" id="ed-export"><i data-icon="download"></i>Exportar</button>
+                  <button class="btn sm" data-op="duplicate"><i data-icon="copy"></i>Duplicar</button>
+                  <button class="btn sm" id="ed-to-clone"><i data-icon="voice"></i>Usar para clonar</button>
+                  <button class="btn sm danger" data-op="delete_item"><i data-icon="trash"></i>Eliminar audio</button></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ======================================================= AJUSTES -->
+      <section class="page" id="page-settings" data-title="Ajustes" data-subtitle="Dispositivos, micrófono virtual y rendimiento">
+        <div class="grid cols-2">
+          <div class="card">
+            <div class="card-head">
+              <div class="icon-box"><i data-icon="mic"></i></div>
+              <div><h3 class="card-title">Dispositivos de audio</h3><div class="card-desc">Se recuerdan por nombre aunque cambies de puerto USB</div></div>
+              <div class="spacer"></div>
+              <button class="btn sm" id="btn-refresh"><i data-icon="refresh"></i>Actualizar dispositivos</button>
+            </div>
+            <div id="devices-error"></div>
+            <div class="field">
+              <div class="field-label">Controlador de audio</div>
+              <select data-select="audio.hostapi" id="sel-hostapi"></select>
+              <div class="field-hint">WASAPI ofrece la menor latencia y nombres completos de los dispositivos.</div>
+            </div>
+            <div class="field">
+              <div class="field-label">Micrófono físico</div>
+              <select data-select="audio.input_device" id="sel-input"></select>
+            </div>
+            <div class="field">
+              <div class="field-label">Canal de entrada</div>
+              <select data-select="audio.input_channel_mode">
+                <option value="mix">Mezclar izquierdo y derecho</option>
+                <option value="left">Solo canal 1 (izquierdo)</option>
+                <option value="right">Solo canal 2 (derecho)</option>
+              </select>
+              <div class="field-hint">Si tu interfaz de audio pone el micrófono solo en un canal, elige ese canal para no perder volumen.</div>
+            </div>
+          </div>
+
+          <div class="card" id="virtual-card">
+            <div class="card-head">
+              <div class="icon-box cyan"><i data-icon="plug"></i></div>
+              <div><h3 class="card-title">Micrófono virtual de Windows</h3><div class="card-desc">Para que Discord, Steam o el navegador reciban tu voz procesada</div></div>
+            </div>
+            <div id="virtual-status"></div>
+            <ol class="steps" style="margin-top:16px">
+              <li><div><b>Instala VB-CABLE</b> (gratuito, firmado por Microsoft). Ejecuta el instalador como administrador y reinicia.
+                <div class="step-actions"><button class="btn sm" data-external="vbcable"><i data-icon="external"></i>Página oficial de VB-CABLE</button></div></div></li>
+              <li><div><b>Renómbralo a «VoiceLab AI Microphone»</b>: en el panel de Sonido, pestaña <i>Grabación</i>, abre <span class="mono">CABLE Output</span> → Propiedades y cambia el nombre.
+                <div class="step-actions win-only"><button class="btn sm" data-sound-panel="recording"><i data-icon="external"></i>Abrir panel de Sonido</button></div></div></li>
+              <li><div><b>Elige «VoiceLab AI Microphone»</b> como micrófono en Discord, Steam, juegos o el navegador.</div></li>
+              <li><div><b>Activa la ruta «Micrófono virtual»</b> en el modulador. VoiceLab AI escribe en <span class="mono" id="cable-out-name">CABLE Input</span>.</div></li>
+            </ol>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="icon-box amber"><i data-icon="gauge"></i></div>
+              <div><h3 class="card-title">Rendimiento y latencia</h3><div class="card-desc">Valores más bajos = menos retardo, pero más riesgo de cortes</div></div>
+            </div>
+            <div class="field">
+              <div class="field-label">Frecuencia de muestreo</div>
+              <select data-select="audio.sample_rate">
+                <option value="48000">48 000 Hz (recomendado)</option>
+                <option value="44100">44 100 Hz</option>
+              </select>
+            </div>
+            <div class="field">
+              <div class="field-label">Tamaño de bloque</div>
+              <select data-select="audio.block_size" id="sel-block"></select>
+            </div>
+            <div class="field">
+              <div class="field-label">Margen anticortes</div>
+              <select data-select="audio.buffer_blocks" id="sel-buffer"></select>
+              <div class="field-hint">Colchón entre la entrada y cada salida. Súbelo si oyes chasquidos.</div>
+            </div>
+            <div class="notice info" style="margin-top:16px"><i data-icon="info"></i><div id="latency-estimate"></div></div>
+          </div>
+
+          <div class="card span-2" id="ai-card">
+            <div class="card-head">
+              <div class="icon-box"><i data-icon="sparkles"></i></div>
+              <div><h3 class="card-title">Motor de IA y modelos</h3><div class="card-desc">Todo se ejecuta en tu equipo. Los modelos se descargan una vez desde Hugging Face (gratis, sin cuenta) y después funcionan sin Internet.</div></div>
+            </div>
+            <div id="ai-panel"></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <div class="icon-box green"><i data-icon="cpu"></i></div>
+              <div><h3 class="card-title">Sistema</h3><div class="card-desc">Hardware y motores disponibles</div></div>
+            </div>
+            <dl class="kv" id="settings-system"></dl>
+            <div class="divider"></div>
+            <div class="small muted" id="about"></div>
+            <div class="row" style="margin-top:12px"><input type="text" id="upd-url" placeholder="Dirección de actualizaciones (opcional): https://…/version.json"><button class="btn sm" id="upd-check">Comprobar actualizaciones</button></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="jobbar" id="jobbar" hidden><span id="jobbar-label"></span><div class="progress"><i id="jobbar-fill"></i></div></div>
+
+<div class="modal-back" id="modal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="icon-box amber"><i data-icon="headphones"></i></div>
+    <h3 id="modal-title">¿Monitorizar por altavoces?</h3>
+    <p id="modal-text"></p>
+    <label class="checkbox"><input type="checkbox" id="modal-remember"> No volver a mostrar este aviso</label>
+    <div class="actions">
+      <button class="btn" id="modal-cancel">Cancelar</button>
+      <button class="btn primary" id="modal-ok">Activar monitorización</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-back" id="pmodal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pmodal-title">
+    <h3 id="pmodal-title">Perfil</h3>
+    <div class="row" style="gap:14px;align-items:flex-start;margin-top:10px">
+      <label class="avatar-pick" title="Cambiar imagen"><img id="pm-avatar" alt=""><input type="file" id="pm-avatar-file" accept="image/png,image/jpeg,image/webp" hidden></label>
+      <div class="grow" style="display:grid;gap:10px">
+        <input type="text" id="pm-name" placeholder="Nombre del perfil" maxlength="80">
+        <input type="text" id="pm-folder" placeholder="Carpeta (opcional)" maxlength="60" list="pm-folders"><datalist id="pm-folders"></datalist>
+      </div>
+    </div>
+    <textarea id="pm-desc" placeholder="Descripción (opcional)" maxlength="1000" rows="3" style="margin-top:12px"></textarea>
+    <div class="actions">
+      <button class="btn" id="pm-cancel">Cancelar</button>
+      <button class="btn primary" id="pm-ok">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script src="icons.js"></script>
+<script src="bridge.js"></script>
+<script src="app.js"></script>
+<script src="voice.js"></script>
+<script src="library.js"></script>
+<script src="studio.js"></script>
+<script src="ai.js"></script>
+</body>
+</html>

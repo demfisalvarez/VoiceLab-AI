@@ -1,0 +1,24 @@
+pcm.vl_mic_raw {
+    type file
+    slave.pcm "null"
+    file "/dev/null"
+    infile "/tmp/vl_in.raw"
+    format "raw"
+}
+pcm."Mic Realtek Prueba" {
+    type plug
+    slave { pcm "vl_mic_raw"; format S16_LE; rate 48000; channels 1; }
+    hint { show on; description "Microfono de prueba"; }
+}
+pcm.vl_cable_raw { type file; slave.pcm "null"; file "/tmp/vl_cable.raw"; format "raw"; }
+pcm."CABLE Input (VB-Audio Virtual Cable)" {
+    type plug
+    slave { pcm "vl_cable_raw"; format FLOAT_LE; rate 48000; channels 2; }
+    hint { show on; description "cable"; }
+}
+pcm.vl_mon_raw { type file; slave.pcm "null"; file "/tmp/vl_mon.raw"; format "raw"; }
+pcm."Auriculares Prueba" {
+    type plug
+    slave { pcm "vl_mon_raw"; format FLOAT_LE; rate 48000; channels 2; }
+    hint { show on; description "monitor"; }
+}

@@ -1,0 +1,6 @@
+# VoiceLab AI — dependencias de la Fase 1
+numpy>=1.26
+sounddevice>=0.4.7   # incluye PortAudio con WASAPI para Windows
+pywebview>=5.3       # ventana nativa con WebView2 (instala pythonnet en Windows)
+scipy>=1.11           # filtros de la cadena de efectos
+imageio-ffmpeg>=0.5   # FFmpeg para importar vídeo y exportar MP3/FLAC/OGG
