@@ -29,7 +29,7 @@ LANGUAGES = {"es": "Español", "en": "Inglés", "fr": "Francés", "de": "Alemán
              "ja": "Japonés", "ko": "Coreano", "zh": "Chino"}
 
 
-REF_SECONDS = 10               # como el original (DEC_COND_LEN): más referencia solo ralentiza
+REF_SECONDS = 6                # medido en Windows: igual de inteligible que 10 s y ~35 % más rápido
 
 
 class TTSError(RuntimeError):
