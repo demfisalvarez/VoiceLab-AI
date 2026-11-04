@@ -78,7 +78,8 @@ def run(out: Path, services=None) -> int:
 
     _check(results, "voz_en_directo", lambda: {
         "worker": meanvc.worker_script().exists(), "codigo": (meanvc.code_dir() / "runtime" / "run_rt.py").exists(),
-        "uv": str(meanvc._uv()), "supported": meanvc.supported(), "runtime_dir": str(meanvc.runtime_dir())})
+        "uv": str(meanvc._uv()), "pybase": str(meanvc._bundled_python()), "supported": meanvc.supported(),
+        "runtime_dir": str(meanvc.runtime_dir())})
     _check(results, "modelos", lambda: {k: models.installed(k) for k in models.CATALOG})
 
     results["ok"] = all(v.get("ok") for v in results.values() if isinstance(v, dict) and "ok" in v)

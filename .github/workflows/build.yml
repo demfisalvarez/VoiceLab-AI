@@ -55,23 +55,30 @@ jobs:
           New-Item -ItemType Directory -Force "dist/VoiceLab AI/bin" | Out-Null
           Copy-Item (Get-ChildItem uvtmp -Recurse -Filter uv.exe | Select-Object -First 1).FullName "dist/VoiceLab AI/bin/uv.exe"
           & "dist/VoiceLab AI/bin/uv.exe" --version
+      - name: Incluir un Python 3.12 completo (base de la voz en directo, sin uniones de directorio)
+        run: |
+          $env:UV_PYTHON_INSTALL_DIR = "$PWD\uvpy"
+          & "dist/VoiceLab AI/bin/uv.exe" python install 3.12
+          $real = Get-ChildItem uvpy -Directory | Where-Object { $_.Name -like 'cpython-3.12.*' -and -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } | Select-Object -First 1
+          if (-not $real) { throw "No se encontró el Python descargado" }
+          Copy-Item -Recurse $real.FullName "dist/VoiceLab AI/pybase"
+          & "dist/VoiceLab AI/pybase/python.exe" -c "import sys, ssl, venv; print(sys.version)"
+          $links = Get-ChildItem "dist/VoiceLab AI/pybase" -Recurse -Attributes ReparsePoint -ErrorAction SilentlyContinue
+          if ($links) { throw "pybase contiene enlaces: $links" }
       - name: Autocomprobación del .exe
         run: |
           ./tools/ci_run_exe.ps1 -Exe "dist\VoiceLab AI\VoiceLab AI.exe" -Arguments '--selftest', "`"$PWD\selftest.json`"" -TimeoutSec 240 -DataDir "$PWD\st-datos" -Shot "$PWD\captura-selftest.png"
           $code = $LASTEXITCODE
           Get-Content selftest.json -ErrorAction SilentlyContinue
           if ($code -ne 0) { throw "Autocomprobación fallida ($code)" }
-      - name: Python gestionado por uv (lo que hará la voz en directo en el .exe)
-        run: |
-          $env:UV_PYTHON_INSTALL_DIR = "$PWD\vc-python"
-          $env:UV_PYTHON_PREFERENCE = "only-managed"
-          & "dist/VoiceLab AI/bin/uv.exe" venv --no-config --python 3.12 vc-test
-          & vc-test\Scripts\python.exe -c "import sys; print(sys.version)"
       - name: Voz en directo desde el .exe (entorno de PyTorch con uv)
         run: |
           ./tools/ci_run_exe.ps1 -Exe "dist\VoiceLab AI\VoiceLab AI.exe" -Arguments '--selftest-live', "`"$PWD\live.json`"" -TimeoutSec 900 -DataDir "$PWD\live-datos" -Shot "$PWD\captura-live.png"
           $code = $LASTEXITCODE
           Get-Content live.json -ErrorAction SilentlyContinue
+          Get-Content "dist\VoiceLab AI\vc-runtime\pyvenv.cfg" -ErrorAction SilentlyContinue
+          $links = Get-ChildItem "dist\VoiceLab AI" -Recurse -Attributes ReparsePoint -ErrorAction SilentlyContinue
+          if ($links) { throw "Hay uniones/enlaces de directorio (Windows puede bloquearlas): $links" }
           Remove-Item -Recurse -Force "dist\VoiceLab AI\vc-runtime", "dist\VoiceLab AI\vc-python" -ErrorAction SilentlyContinue
           if ($code -ne 0) { throw "La voz en directo no funciona desde el .exe ($code)" }
       - name: Ventana real (WebView2)

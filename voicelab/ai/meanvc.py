@@ -148,9 +148,23 @@ def bench() -> dict | None:
         return None
 
 
+def _bundled_python() -> Path | None:
+    """Python 3.12 completo que acompaña al .exe (carpeta «pybase»), sin enlaces ni uniones.
+
+    No se usa el Python «gestionado» de uv porque uv crea una unión de directorio
+    (cpython-3.12-…) y Windows 11 puede bloquear recorrerla: «La ruta no se puede
+    recorrer porque contiene un punto de montaje no confiable (os error 448)».
+    """
+    exe_dir = Path(sys.executable).resolve().parent
+    for c in (exe_dir / "pybase" / "python.exe", Path(getattr(sys, "_MEIPASS", exe_dir)) / "pybase" / "python.exe"):
+        if c.exists():
+            return c
+    return None
+
+
 def supported() -> bool:
-    """El ejecutable empaquetado necesita su «uv» para descargar un Python con PyTorch."""
-    return not _frozen() or _uv() is not None
+    """El ejecutable empaquetado necesita su «uv» y su Python base para crear el entorno de PyTorch."""
+    return not _frozen() or (_uv() is not None and _bundled_python() is not None)
 
 
 def _runtime_version() -> tuple:
@@ -199,13 +213,18 @@ def install_runtime(progress) -> None:
     progress(0.05)
     if d.exists() and not (d / ".complete").exists():
         shutil.rmtree(d, ignore_errors=True)            # instalación anterior a medias
+    old = d.parent / "vc-python"                        # Python de uv de la v0.7.0 (con uniones): ya no se usa
+    if _frozen() and old.exists():
+        shutil.rmtree(old, ignore_errors=True)
     d.parent.mkdir(parents=True, exist_ok=True)
     env = None
     if uv is not None:
         if _frozen():
-            # El .exe no lleva un Python «de verdad»: uv descarga uno oficial (python-build-standalone).
-            env = dict(os.environ, UV_PYTHON_INSTALL_DIR=str(d.parent / "vc-python"), UV_PYTHON_PREFERENCE="only-managed")
-            pyspec = "3.12"
+            base = _bundled_python()
+            if base is None:
+                raise RuntimeError("Falta la carpeta «pybase» junto a VoiceLab AI.exe; reinstala la aplicación.")
+            pyspec = str(base)
+            env = dict(os.environ, UV_PYTHON_DOWNLOADS="never")      # nunca un Python con uniones de uv
         else:
             pyspec = str(_base_python())
         if not runtime_python().exists():
@@ -222,8 +241,27 @@ def install_runtime(progress) -> None:
         extra = [] if sys.platform == "win32" else ["--extra-index-url", "https://download.pytorch.org/whl/cpu"]
         _run([str(runtime_python()), "-m", "pip", "install", "--disable-pip-version-check", *extra, *pkgs],
              "Instalar PyTorch (CPU)")
+    _check_no_junctions(d)
     (d / ".complete").write_text(json.dumps({"packages": pkgs}), encoding="utf-8")
     progress(1.0)
+
+
+def _check_no_junctions(d: Path) -> None:
+    """El entorno no debe depender de uniones de directorio (Windows puede bloquearlas)."""
+    if sys.platform != "win32":
+        return
+    cfg = d / "pyvenv.cfg"
+    try:
+        home = next((ln.split("=", 1)[1].strip() for ln in cfg.read_text(encoding="utf-8").splitlines()
+                     if ln.lower().startswith("home")), "")
+    except OSError:
+        return
+    p = Path(home)
+    while p != p.parent:
+        if getattr(p, "is_junction", lambda: False)() or p.is_symlink():
+            raise RuntimeError(f"El entorno de PyTorch depende de un enlace de directorio ({p}), que Windows "
+                               "puede bloquear. Pulsa «Instalar» otra vez.")
+        p = p.parent
 
 
 def selftest(variant: str = "120ms", seconds: float = 4.0) -> dict:
@@ -279,8 +317,8 @@ def remove() -> None:
             break
         shutil.rmtree(d, ignore_errors=True)
         time.sleep(0.5)
-    py = d.parent / "vc-python"
-    if _frozen() and py.exists():
+    py = d.parent / "vc-python"                 # restos de versiones que usaban el Python de uv
+    if py.exists():
         shutil.rmtree(py, ignore_errors=True)
     if d.exists():
         raise RuntimeError(f"No se pudo borrar por completo {d}. Cierra VoiceLab AI y bórrala a mano.")

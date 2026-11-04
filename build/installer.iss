@@ -41,6 +41,7 @@ Type: filesandordirs; Name: "{app}\assets"
 Type: files; Name: "{app}\requirements.txt"
 Type: files; Name: "{app}\README.md"
 Type: files; Name: "{app}\ARQUITECTURA.md"
+Type: filesandordirs; Name: "{app}\vc-python"
 Type: files; Name: "{userprograms}\VoiceLab AI.lnk"
 Type: files; Name: "{userdesktop}\VoiceLab AI.lnk"
 

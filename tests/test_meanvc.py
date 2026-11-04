@@ -429,6 +429,10 @@ def test_frozen_build_uses_bundled_uv_and_managed_python(tmp_path, monkeypatch):
         meanvc.install(lambda p: None)
     (exe_dir / "bin").mkdir()
     (exe_dir / "bin" / "uv.exe").write_text("")
+    assert not meanvc.supported()                               # ni sin su Python base
+    (exe_dir / "pybase").mkdir()
+    (exe_dir / "pybase" / "python.exe").write_text("")
+    (exe_dir / "vc-python").mkdir()                             # resto de la v0.7.0: se borra
     assert meanvc.supported() and meanvc.runtime_dir() == exe_dir / "vc-runtime"
     calls = []
 
@@ -440,6 +444,7 @@ def test_frozen_build_uses_bundled_uv_and_managed_python(tmp_path, monkeypatch):
     monkeypatch.setattr(meanvc, "_run", run)
     meanvc.install_runtime(lambda p: None)
     venv_cmd, env = calls[0]
-    assert venv_cmd[venv_cmd.index("--python") + 1] == "3.12"
-    assert env["UV_PYTHON_INSTALL_DIR"] == str(exe_dir / "vc-python") and env["UV_PYTHON_PREFERENCE"] == "only-managed"
+    assert venv_cmd[venv_cmd.index("--python") + 1] == str(exe_dir / "pybase" / "python.exe")
+    assert env["UV_PYTHON_DOWNLOADS"] == "never" and "UV_PYTHON_INSTALL_DIR" not in env
+    assert not (exe_dir / "vc-python").exists()
     assert "torch==2.5.1" in calls[1][0]                       # Python 3.12 → PyTorch 2.5.1
