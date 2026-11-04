@@ -5,6 +5,9 @@ import os
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))  # noqa: F821 - SPECPATH lo define PyInstaller
+import sys  # noqa: E402
+
+sys.path.insert(0, ROOT)          # para que collect_submodules encuentre el paquete «voicelab»
 
 
 def r(*p):
