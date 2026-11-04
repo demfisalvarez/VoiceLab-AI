@@ -68,8 +68,8 @@ def sapi(text: str, voice_hint: str, path: Path) -> Path:
     ps = ("Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
           f"$v = $s.GetInstalledVoices() | ForEach-Object {{ $_.VoiceInfo.Name }} | Where-Object {{ $_ -like '*{voice_hint}*' }} | Select-Object -First 1; "
           "if ($v) { $s.SelectVoice($v) }; "
-          f"$s.SetOutputToWaveFile('{path}'); $s.Speak('{text}'); $s.Dispose(); "
-          "Write-Output (($s.GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name }) -join ', ')")
+          f"$s.SetOutputToWaveFile('{path}'); $s.Speak('{text}'); $s.SetOutputToNull(); $s.Dispose(); "
+          "Write-Output $v")
     r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True)
     if r.returncode != 0 or not path.exists():
         raise RuntimeError("SAPI falló: " + r.stderr[-500:])

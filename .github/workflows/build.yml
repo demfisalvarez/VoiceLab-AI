@@ -129,7 +129,8 @@ jobs:
       - name: Dependencias
         run: python -m pip install -r requirements.txt onnxruntime-directml tokenizers
       - name: Caché de modelos
-        uses: actions/cache@v4
+        id: cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ci-out/datos/models
@@ -142,6 +143,14 @@ jobs:
           (New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name }
       - name: Modelos reales
         run: python tools/ci_real_models.py ci-out
+      - name: Guardar la caché de modelos (aunque alguna prueba falle)
+        if: always() && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ci-out/datos/models
+            ci-out/datos/vc-runtime
+          key: modelos-${{ hashFiles('voicelab/ai/models.py', 'voicelab/ai/meanvc.py') }}
       - name: Recoger resultados
         if: always()
         run: |
