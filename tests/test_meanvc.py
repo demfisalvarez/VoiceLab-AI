@@ -330,7 +330,10 @@ def test_api_live_instant_voice_flow(api):
     assert r["ok"] and r["job"]
     j = wait_job(api, r)
     assert j["state"] == "done", j
-    proc = api._engine.ai  # noqa: SLF001
+    from voicelab.audio.polish import PolishedAI
+    wrapped = api._engine.ai  # noqa: SLF001
+    assert isinstance(wrapped, PolishedAI) and wrapped.clean is not None and wrapped.post is not None
+    proc = wrapped.inner
     assert isinstance(proc, meanvc.RealtimeMeanVC) and proc.variant == "120ms"
     time.sleep(0.6)
     st = api.get_status()["ai"]
@@ -339,12 +342,18 @@ def test_api_live_instant_voice_flow(api):
 
     pid = proc.w.proc.pid                                     # otra voz instantánea: mismo proceso
     j = wait_job(api, api.activate_profile(p2))
-    assert j["state"] == "done" and api._engine.ai is proc and proc.w.proc.pid == pid  # noqa: SLF001
+    assert j["state"] == "done" and api._engine.ai.inner is proc and proc.w.proc.pid == pid  # noqa: SLF001
+    assert proc.error is None and proc.w.alive
+
+    wait_job(api, api.update_settings({"voice": {"ai_polish": False, "ai_clean_input": False}}))
+    assert api._engine.ai is proc and proc.w.alive               # sin acabado: el mismo modelo, sin envoltura  # noqa: SLF001
+    wait_job(api, api.update_settings({"voice": {"ai_polish": True}}))
+    assert api._engine.ai.inner is proc and api._engine.ai.clean is None  # noqa: SLF001
 
     r = api.update_settings({"ai": {"meanvc_variant": "40ms"}})   # otro modo: proceso nuevo
     assert r["ok"] and r["job"]
     wait_job(api, r)
-    assert api._engine.ai is not proc and api._engine.ai.variant == "40ms"  # noqa: SLF001
+    assert api._engine.ai.inner is not proc and api._engine.ai.variant == "40ms"  # noqa: SLF001
 
     r = api.update_settings({"voice": {"instant_live": False}})
     assert r["ok"] and api._engine.ai is None                 # noqa: SLF001

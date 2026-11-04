@@ -386,11 +386,14 @@ class AudioEngine:
         """Procesador de IA activo (o ``None``)."""
         return self._ai
 
-    def set_ai(self, processor) -> None:
-        """Activa o quita la conversión por IA sin detener el audio."""
+    def set_ai(self, processor, close_old: bool = True) -> None:
+        """Activa o quita la conversión por IA sin detener el audio.
+
+        ``close_old=False`` sirve para cambiar solo la envoltura (acabado) conservando el mismo modelo.
+        """
         old, self._ai = self._ai, processor
         self._rebuild_processors()
-        if old is not None and old is not processor and hasattr(old, "close"):
+        if close_old and old is not None and old is not processor and hasattr(old, "close"):
             old.close()
 
     def stop(self) -> None:

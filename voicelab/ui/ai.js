@@ -170,9 +170,23 @@
     const prof = profiles.find((p) => p.id === set.voice.profile_id);
     const live = ai && ai.live;
     const sig = JSON.stringify([prof && prof.id, prof && prof.type, prof && prof.has_reference, live && live.installed,
-      set.voice.instant_live, set.ai.meanvc_variant, set.voice.rvc_pitch]);
+      set.voice.instant_live, set.ai.meanvc_variant, set.voice.rvc_pitch, set.voice.ai_polish, set.voice.ai_clean_input]);
     if (sig !== voiceSig) { voiceSig = sig; buildVoice(box, prof, live); }
     renderVoiceStatus(prof);
+  }
+
+  // Acabado de estudio: limpieza antes de la IA y producción (de-esser, compresión, nivel) después.
+  function qualityHTML() {
+    const v = VL.S.settings.voice;
+    return '<div class="fx-row" style="margin-top:10px;gap:18px;display:flex;flex-wrap:wrap">' +
+      '<label class="checkbox" title="Paso alto y reducción de ruido suave: el modelo entiende mejor tu voz"><input type="checkbox" id="q-clean"' + (v.ai_clean_input ? ' checked' : '') + '><span>Limpiar mi voz antes de convertir</span></label>' +
+      '<label class="checkbox" title="Control de eses, compresión suave, presencia y volumen constante, como en una voz producida"><input type="checkbox" id="q-polish"' + (v.ai_polish ? ' checked' : '') + '><span>Acabado de estudio</span></label></div>';
+  }
+
+  function bindQuality() {
+    const c = $('#q-clean'), q = $('#q-polish');
+    if (c) c.onchange = async () => VL.applyResponse(await VL.call('update_settings', { voice: { ai_clean_input: c.checked } }));
+    if (q) q.onchange = async () => VL.applyResponse(await VL.call('update_settings', { voice: { ai_polish: q.checked } }));
   }
 
   function buildVoice(box, prof, live) {
@@ -197,15 +211,18 @@
         '<span><b>Hablar en directo con esta voz</b> <span class="badge" style="background:var(--warn-soft);color:var(--warn)">Experimental</span></span></label>' +
         '<div class="fx-row" style="margin-top:10px"><div class="field-label">Modo</div><select id="live-variant">' +
         Object.entries(live.variants).map(([k, v]) => '<option value="' + k + '"' + (k === set.ai.meanvc_variant ? ' selected' : '') + '>' + VL.esc(v) + '</option>').join('') +
-        '</select></div><div id="live-status" style="margin-top:10px"></div>' +
+        '</select></div>' + qualityHTML() + '<div id="live-status" style="margin-top:10px"></div>' +
         '<div class="field-hint" style="margin-top:8px">Conversión sin entrenamiento a partir de la referencia del perfil. Se parece menos que una voz RVC entrenada y el modelo se entrenó sobre todo con inglés y chino: en español la pronunciación puede sonar menos natural. La primera vez con cada voz tarda unos segundos más (calcula su huella).</div>';
       $('#live-on').onchange = async (e) => VL.applyResponse(await VL.call('update_settings', { voice: { instant_live: e.target.checked } }));
       $('#live-variant').onchange = async (e) => VL.applyResponse(await VL.call('update_settings', { ai: { meanvc_variant: e.target.value } }));
+      bindQuality();
       return;
     }
     const pitch = set.voice.rvc_pitch;
     box.innerHTML = '<div id="live-status"></div>' +
-      '<div class="fx-row" style="margin-top:10px"><div class="field-label">Ajuste de tono para esta voz</div><div class="range-field" id="rvc-pitch"><input type="range" min="-24" max="24" step="1" value="' + pitch + '"><input type="number" min="-24" max="24" step="1" value="' + pitch + '"><span class="unit">st</span></div></div>';
+      '<div class="fx-row" style="margin-top:10px"><div class="field-label">Ajuste de tono para esta voz</div><div class="range-field" id="rvc-pitch"><input type="range" min="-24" max="24" step="1" value="' + pitch + '"><input type="number" min="-24" max="24" step="1" value="' + pitch + '"><span class="unit">st</span></div></div>' +
+      qualityHTML();
+    bindQuality();
     box.querySelectorAll('#rvc-pitch input').forEach((i) => i.onchange = async () => {
       VL.applyResponse(await VL.call('update_settings', { voice: { rvc_pitch: parseFloat(i.value) } }));
     });

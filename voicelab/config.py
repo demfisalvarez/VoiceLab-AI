@@ -100,6 +100,8 @@ SCHEMA: dict[str, dict[str, tuple[Any, Callable[[Any], Any]]]] = {
         "rvc_pitch": (0.0, _float_range(-24.0, 24.0)),
         "rvc_block": (0.3, _float_range(0.1, 1.0)),
         "instant_live": (True, _bool),          # voz instantánea en directo (MeanVC2)
+        "ai_polish": (True, _bool),             # acabado de estudio a la salida de la IA
+        "ai_clean_input": (True, _bool),        # limpieza de la voz antes de la IA
     },
     "ai": {
         "tts_model": ("chatterbox-v2", _choice(("chatterbox-v2",))),

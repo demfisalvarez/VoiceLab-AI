@@ -804,11 +804,13 @@ class AIApiMixin:
             from .ai import meanvc
             variant = self._settings.get("ai", "meanvc_variant")
             cur = self._engine.ai
-            if (isinstance(cur, meanvc.RealtimeMeanVC) and cur.variant == variant and cur.sr == sr
-                    and cur.error is None and cur.w.alive):
-                emb = meanvc.profile_embedding(cur.w, pdir)       # mismo proceso: solo cambia la voz
+            inner = getattr(cur, "inner", cur)
+            if (isinstance(inner, meanvc.RealtimeMeanVC) and inner.variant == variant and inner.sr == sr
+                    and inner.error is None and inner.w.alive):
+                emb = meanvc.profile_embedding(inner.w, pdir)     # mismo proceso: solo cambia la voz
                 if gen == self._ai_gen:
-                    cur.set_embedding(emb)
+                    inner.set_embedding(emb)
+                    self._engine.set_ai(self._finish(inner, sr), close_old=False)   # por si cambió el acabado
                 return
             worker = meanvc.MeanVCWorker(meanvc.worker_command(variant))
             try:
@@ -820,7 +822,16 @@ class AIApiMixin:
         if gen != self._ai_gen or not self._engine.running:   # el usuario ya eligió otra cosa
             proc.close()
             return
-        self._engine.set_ai(proc)
+        self._engine.set_ai(self._finish(proc, sr))
+
+    def _finish(self, proc, sr: int):
+        """Limpieza de entrada y acabado de estudio alrededor de la voz de IA (si están activados)."""
+        from .audio.polish import PolishedAI
+        v = self._settings.snapshot()["voice"]
+        if not (v["ai_polish"] or v["ai_clean_input"]):
+            return proc
+        hd = getattr(proc, "out_sr", 16000) >= 32000 or getattr(proc, "kind", "") == "rvc"
+        return PolishedAI(proc, sr, clean_input=v["ai_clean_input"], polish=v["ai_polish"], air=hd)
 
     def _ai_job(self, prof: dict) -> str:
         self._ws()
@@ -891,7 +902,8 @@ class AIApiMixin:
             return res
         reload = (("sample_rate" in au and self._engine.ai is None)
                   or (typ == "rvc" and ("rvc_pitch" in v or "rvc_block" in v))
-                  or (typ == "instant" and ("instant_live" in v or "meanvc_variant" in a)))
+                  or (typ == "instant" and ("instant_live" in v or "meanvc_variant" in a))
+                  or "ai_polish" in v or "ai_clean_input" in v)
         if reload:
             res["job"] = self._ai_job(prof)
         return res
