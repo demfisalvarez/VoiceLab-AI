@@ -203,6 +203,10 @@ if __name__ == "__main__":
     if summary:
         with open(summary, "a", encoding="utf-8") as f:
             f.write("## Modelos reales\n\n```json\n" + json.dumps(REPORT, indent=2, ensure_ascii=False) + "\n```\n")
+    logs = Path(os.environ["VOICELAB_DATA_DIR"]) / "logs"
+    for f in sorted(logs.glob("*.log")) if logs.exists() else []:
+        print(f"\n----- {f.name} (final)")
+        print("\n".join(f.read_text("utf-8", "replace").splitlines()[-60:]))
     bad = [k for k, v in REPORT.items() if not v.get("ok")]
     print("\nRESULTADO:", "todo bien" if not bad else "fallos en " + ", ".join(bad))
     sys.exit(1 if bad else 0)

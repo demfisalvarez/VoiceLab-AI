@@ -30,7 +30,7 @@ defaults:
 jobs:
   app:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -57,10 +57,10 @@ jobs:
           & "dist/VoiceLab AI/bin/uv.exe" --version
       - name: Autocomprobación del .exe
         run: |
-          $env:VOICELAB_DATA_DIR = "$PWD\st-datos"
-          $p = Start-Process "dist\VoiceLab AI\VoiceLab AI.exe" -ArgumentList '--selftest', "$PWD\selftest.json" -PassThru -Wait
-          Get-Content selftest.json
-          if ($p.ExitCode -ne 0) { throw "Autocomprobación fallida ($($p.ExitCode))" }
+          ./tools/ci_run_exe.ps1 -Exe "dist\VoiceLab AI\VoiceLab AI.exe" -Arguments '--selftest', "`"$PWD\selftest.json`"" -TimeoutSec 240 -DataDir "$PWD\st-datos" -Shot "$PWD\captura-selftest.png"
+          $code = $LASTEXITCODE
+          Get-Content selftest.json -ErrorAction SilentlyContinue
+          if ($code -ne 0) { throw "Autocomprobación fallida ($code)" }
       - name: Python gestionado por uv (lo que hará la voz en directo en el .exe)
         run: |
           $env:UV_PYTHON_INSTALL_DIR = "$PWD\vc-python"
@@ -70,12 +70,9 @@ jobs:
       - name: Ventana real (WebView2)
         continue-on-error: true
         run: |
-          $env:VOICELAB_DATA_DIR = "$PWD\win-datos"
-          $p = Start-Process "dist\VoiceLab AI\VoiceLab AI.exe" -ArgumentList '--selftest-window', "$PWD\window.json" -PassThru
-          if (-not $p.WaitForExit(240000)) { $p.Kill(); throw "La ventana no respondió en 4 minutos" }
-          Get-Content window.json
-          Get-Content win-datos\logs\voicelab.log -ErrorAction SilentlyContinue
-          if (-not (Get-Content window.json | ConvertFrom-Json).ok) { throw "La interfaz no llegó a estar lista" }
+          ./tools/ci_run_exe.ps1 -Exe "dist\VoiceLab AI\VoiceLab AI.exe" -Arguments '--selftest-window', "`"$PWD\window.json`"" -TimeoutSec 240 -DataDir "$PWD\win-datos" -Shot "$PWD\captura-ventana.png"
+          Get-Content window.json -ErrorAction SilentlyContinue
+          if (-not (Get-Content window.json -ErrorAction Stop | ConvertFrom-Json).ok) { throw "La interfaz no llegó a estar lista" }
       - name: Instalador (Inno Setup)
         run: |
           choco install innosetup -y --no-progress
@@ -86,22 +83,24 @@ jobs:
       - name: Instalar, abrir y desinstalar en silencio
         run: |
           $setup = (Get-ChildItem dist\VoiceLabAI-Setup-*.exe | Select-Object -First 1).FullName
-          Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER' -Wait
+          $sp = Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/LOG=instalacion.log' -PassThru
+          if (-not $sp.WaitForExit(300000)) { throw "El instalador no terminó en 5 min" }
           $exe = "$env:LOCALAPPDATA\Programs\VoiceLab AI\VoiceLab AI.exe"
           if (-not (Test-Path $exe)) { throw "No se instaló $exe" }
-          $env:VOICELAB_DATA_DIR = "$PWD\inst-datos"
-          $p = Start-Process $exe -ArgumentList '--selftest', "$PWD\selftest-instalado.json" -PassThru -Wait
-          Get-Content selftest-instalado.json
-          if ($p.ExitCode -ne 0) { throw "El programa instalado no pasa la autocomprobación" }
+          ./tools/ci_run_exe.ps1 -Exe $exe -Arguments '--selftest', "`"$PWD\selftest-instalado.json`"" -TimeoutSec 240 -DataDir "$PWD\inst-datos" -Shot "$PWD\captura-instalado.png"
+          $code = $LASTEXITCODE
+          Get-Content selftest-instalado.json -ErrorAction SilentlyContinue
+          if ($code -ne 0) { throw "El programa instalado no pasa la autocomprobación" }
           $unins = Get-ChildItem "$env:LOCALAPPDATA\Programs\VoiceLab AI\unins*.exe" | Select-Object -First 1
-          Start-Process $unins.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
-          Start-Sleep 3
+          $up = Start-Process $unins.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -PassThru
+          if (-not $up.WaitForExit(300000)) { throw "El desinstalador no terminó en 5 min" }
+          Start-Sleep 5
           if (Test-Path $exe) { throw "La desinstalación dejó el programa" }
       - name: Registros
         if: always()
         run: |
           New-Item -ItemType Directory -Force registros | Out-Null
-          Copy-Item *.json registros -ErrorAction SilentlyContinue
+          Copy-Item *.json, *.png, instalacion.log registros -ErrorAction SilentlyContinue
           foreach ($d in 'st-datos', 'win-datos', 'inst-datos') { if (Test-Path "$d\logs") { Copy-Item -Recurse "$d\logs" "registros\$d" } }
       - uses: actions/upload-artifact@v4
         if: always()
