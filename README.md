@@ -15,7 +15,7 @@ El instalador lo genera GitHub Actions en Windows real (`.github/workflows/build
 **Micrófono virtual:** instala [VB-CABLE](https://vb-audio.com/Cable/) (gratis, firmado por Microsoft), reinicia y, opcionalmente, renombra «CABLE Output» a **VoiceLab AI Microphone** (*Ajustes → Abrir panel de Sonido*). En Discord, Steam o el navegador elige ese micrófono.
 
 **IA (una sola vez):** *Ajustes → Motor de IA y modelos* → «Instalar ahora» (ONNX Runtime con DirectML para tu Radeon) y descarga los modelos que quieras:
-- **Chatterbox Multilingual V3** (~1,6 GB): texto a voz y clonación instantánea, 23 idiomas.
+- **Chatterbox Multilingual** (~3,2 GB, exportación ONNX oficial de onnx-community): texto a voz y clonación instantánea, 23 idiomas. Comprobado en Windows transcribiendo el resultado con Whisper (español: 97–100 % de coincidencia con el texto). La exportación comunitaria «V3» que usaban versiones anteriores no lee bien el texto: si la tienes, la app ofrece borrarla.
 - **Base para conversión RVC** (~0,5 GB): necesaria para usar voces RVC en directo.
 - **Voz instantánea en directo** (experimental, ~1,9 GB de descarga): hablar en tiempo real con una voz clonada de ~30 s, sin entrenar. Instala PyTorch para CPU en un entorno aparte. Ver más abajo.
 

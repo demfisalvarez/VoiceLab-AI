@@ -102,7 +102,7 @@ SCHEMA: dict[str, dict[str, tuple[Any, Callable[[Any], Any]]]] = {
         "instant_live": (True, _bool),          # voz instantánea en directo (MeanVC2)
     },
     "ai": {
-        "tts_model": ("chatterbox-v3", _choice(("chatterbox-v3", "chatterbox-v2"))),
+        "tts_model": ("chatterbox-v2", _choice(("chatterbox-v2",))),
         "tts_language": ("es", _opt_str),
         "meanvc_variant": ("120ms", _choice(("120ms", "40ms"))),
         "tts_device": ("cpu", _choice(("cpu", "gpu"))),     # la CPU es lo fiable; la GPU, opcional

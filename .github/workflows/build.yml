@@ -126,7 +126,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Dependencias
-        run: python -m pip install -r requirements.txt onnxruntime-directml tokenizers
+        run: python -m pip install -r requirements.txt onnxruntime-directml tokenizers faster-whisper
       - name: Caché de modelos
         id: cache
         uses: actions/cache/restore@v4

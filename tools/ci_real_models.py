@@ -87,6 +87,26 @@ def f0_median(x: np.ndarray, sr: int) -> float:
     return float(np.median(f0)) if f0.size else 0.0
 
 
+_ASR = None
+
+
+def oir(wav: np.ndarray, sr: int, lang: str) -> str:
+    """Transcribe con Whisper (solo para comprobar que se entiende)."""
+    global _ASR
+    if _ASR is None:
+        from faster_whisper import WhisperModel
+        _ASR = WhisperModel("small", device="cpu", compute_type="int8")
+    segs, _ = _ASR.transcribe(mediaio.resample(wav, sr, 16000), language=lang, beam_size=5)
+    return " ".join(x.text.strip() for x in segs)
+
+
+def parecido(a: str, b: str) -> float:
+    import difflib
+    import re
+    norm = lambda t: re.sub(r"[^a-záéíóúñü ]", "", t.lower())  # noqa: E731
+    return round(difflib.SequenceMatcher(None, norm(a), norm(b)).ratio(), 2)
+
+
 def voices():
     a = mediaio.load_audio(sapi(TEXT_A, "David", OUT / "voz_A_david.wav"), SR)
     b = mediaio.load_audio(sapi(TEXT_B, "Zira", OUT / "voz_B_zira.wav"), SR)
@@ -96,9 +116,9 @@ def voices():
 @step("tts")
 def test_tts():
     from voicelab.ai import models, tts
-    if not models.installed("chatterbox-v3"):
+    if not models.installed("chatterbox-v2"):
         t0 = time.perf_counter()
-        models.install("chatterbox-v3", lambda p: None)
+        models.install("chatterbox-v2", lambda p: None)
         print(f"descarga {time.perf_counter() - t0:.0f} s")
     a, b = voices()
     ref = OUT / "referencia_zira.wav"
@@ -109,7 +129,7 @@ def test_tts():
                        ("en", "The quick brown fox jumps over the lazy dog.")):
         stages = []
         t0 = time.perf_counter()
-        wav, info = svc.synthesize("chatterbox-v3", False, (text, ref, lang, 0.5, 1.0, 1.0),
+        wav, info = svc.synthesize("chatterbox-v2", False, (text, ref, lang, 0.5, 1.0, 1.0),
                                    lambda p: None, stages.append)
         dt = time.perf_counter() - t0
         dur = wav.shape[0] / tts.SR
@@ -117,16 +137,19 @@ def test_tts():
         res[lang] = {"segundos_audio": round(dur, 2), "segundos_calculo": round(dt, 1), "dispositivo": info["device"],
                      "rms": round(float(np.sqrt(np.mean(wav ** 2))), 4),
                      "f0_salida": round(f0_median(wav, tts.SR), 1), "etapas": stages[-3:]}
+        res[lang]["oido"] = oir(wav, tts.SR, lang)
+        res[lang]["parecido"] = parecido(res[lang]["oido"], text)
         assert 1.0 < dur < 20.0, f"duración rara: {dur:.1f} s"
         assert res[lang]["rms"] > 0.01, "audio casi en silencio"
+        assert res[lang]["parecido"] >= 0.75, f"no dice el texto: «{res[lang]['oido']}»"
     res["f0_referencia"] = round(f0_median(b, SR), 1)
     # La segunda llamada reutiliza el proceso (modelo ya cargado): debe ser mucho más rápida que la primera.
     t0 = time.perf_counter()
-    svc.synthesize("chatterbox-v3", False, ("Segunda frase.", ref, "es", 0.5, 1.0, 1.0), None, lambda s: None)
+    svc.synthesize("chatterbox-v2", False, ("Segunda frase.", ref, "es", 0.5, 1.0, 1.0), None, lambda s: None)
     res["segunda_llamada_s"] = round(time.perf_counter() - t0, 1)
     # GPU (en la máquina de compilación no hay GPU: comprueba que el fallo vuelve a la CPU sin colgarse)
     try:
-        wav, info = svc.synthesize("chatterbox-v3", True, ("Prueba con la GPU.", ref, "es", 0.5, 1.0, 1.0),
+        wav, info = svc.synthesize("chatterbox-v2", True, ("Prueba con la GPU.", ref, "es", 0.5, 1.0, 1.0),
                                    None, lambda s: None)
         res["gpu"] = {"dispositivo": info["device"], "fallback": info.get("fallback")}
     except Exception as exc:  # noqa: BLE001
@@ -181,6 +204,9 @@ def test_live():
     finally:
         w.close()
     mediaio.save_wav(OUT / "directo_A_a_B.wav", y, 16000)
+    res["oido_original"] = oir(a[: SR * 12], SR, "en")
+    res["oido_convertida"] = oir(y[: 16000 * 12], 16000, "en")
+    res["parecido_convertida"] = parecido(res["oido_convertida"], res["oido_original"])
     res.update({"ms_por_bloque_mediana": round(float(np.median(times)) * 1000, 1),
                 "ms_por_bloque_p95": round(float(np.percentile(times, 95)) * 1000, 1),
                 "segundos_entrada": round(x16.shape[0] / 16000, 1), "segundos_salida": round(y.shape[0] / 16000, 1),

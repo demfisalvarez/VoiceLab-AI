@@ -26,18 +26,8 @@ HF = "https://huggingface.co"
 UA = "VoiceLabAI/1.0"
 
 CATALOG: dict[str, dict] = {
-    "chatterbox-v3": {
-        "name": "Chatterbox Multilingual V3 (recomendado para español)",
-        "task": "tts", "license": "MIT (Resemble AI); exportación ONNX comunitaria",
-        "repo": "Masterx/chatterbox-multilingual-v3-ONNX",
-        "files": ["tokenizer.json", "onnx/speech_encoder.onnx", "onnx/speech_encoder.onnx_data",
-                  "onnx/embed_tokens.onnx", "onnx/embed_tokens.onnx_data",
-                  "onnx/language_model_q4.onnx", "onnx/language_model_q4.onnx_data",
-                  "onnx/conditional_decoder.onnx", "onnx/conditional_decoder.onnx_data"],
-        "lm": "onnx/language_model_q4.onnx", "approx_gb": 1.55,
-    },
     "chatterbox-v2": {
-        "name": "Chatterbox Multilingual V2 (onnx-community)",
+        "name": "Chatterbox Multilingual (texto a voz y clonación instantánea)",
         "task": "tts", "license": "MIT (Resemble AI)",
         "repo": "onnx-community/chatterbox-multilingual-ONNX",
         "files": ["tokenizer.json", "onnx/speech_encoder.onnx", "onnx/speech_encoder.onnx_data",
@@ -45,6 +35,18 @@ CATALOG: dict[str, dict] = {
                   "onnx/language_model.onnx", "onnx/language_model.onnx_data",
                   "onnx/conditional_decoder.onnx", "onnx/conditional_decoder.onnx_data"],
         "lm": "onnx/language_model.onnx", "approx_gb": 3.2,
+    },
+    # Exportación comunitaria «V3»: probada en Windows con Whisper, no lee el texto (dice frases
+    # inventadas). Solo se muestra si estaba descargada, para poder borrarla.
+    "chatterbox-v3": {
+        "name": "Chatterbox «V3» (exportación comunitaria defectuosa: elimínala)",
+        "task": "tts", "license": "MIT (Resemble AI); exportación ONNX comunitaria", "deprecated": True,
+        "repo": "Masterx/chatterbox-multilingual-v3-ONNX",
+        "files": ["tokenizer.json", "onnx/speech_encoder.onnx", "onnx/speech_encoder.onnx_data",
+                  "onnx/embed_tokens.onnx", "onnx/embed_tokens.onnx_data",
+                  "onnx/language_model_q4.onnx", "onnx/language_model_q4.onnx_data",
+                  "onnx/conditional_decoder.onnx", "onnx/conditional_decoder.onnx_data"],
+        "lm": "onnx/language_model_q4.onnx", "approx_gb": 1.55,
     },
     "rvc-base": {
         "name": "Base para conversión RVC (ContentVec + RMVPE)",
@@ -80,8 +82,11 @@ def installed(key: str) -> bool:
 def status() -> list[dict]:
     out = []
     for key, m in CATALOG.items():
+        if m.get("deprecated") and not model_dir(key).exists():
+            continue
         out.append({"id": key, "name": m["name"], "task": m["task"], "license": m["license"],
-                    "repo": m["repo"], "approx_gb": m["approx_gb"], "installed": installed(key)})
+                    "repo": m["repo"], "approx_gb": m["approx_gb"], "installed": installed(key),
+                    "deprecated": bool(m.get("deprecated"))})
     return out
 
 

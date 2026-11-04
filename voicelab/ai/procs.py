@@ -8,7 +8,7 @@ y se corta, y un fallo se convierte en un mensaje en lugar de cerrar la app.
 
 Uso::
 
-    r = Remote("voicelab.ai.tts:open_engine", ("chatterbox-v3", False), name="texto a voz")
+    r = Remote("voicelab.ai.tts:open_engine", ("chatterbox-v2", False), name="texto a voz")
     wav = r.call("synthesize", texto, ..., progress=cb, timeout=120)
 
 El objeto se crea en el hijo con ``fábrica(*args, stage=…, cancel=…)``.

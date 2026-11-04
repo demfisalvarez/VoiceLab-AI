@@ -22,7 +22,8 @@
       : '<div class="notice warn">' + iconHTML('alert') + '<div><b>El motor de IA no está instalado.</b> Se instalan ONNX Runtime' + (VL.S.app.platform === 'win32' ? ' con DirectML' : '') + ' y tokenizers (~60 MB). <button class="link" id="ai-rt">Instalar ahora</button></div></div>';
     $('#ai-panel').innerHTML = rt + '<div class="models">' + ai.models.filter((m) => m.task !== 'vc_live').map((m) =>
       '<div class="model-row"><div class="grow"><b>' + VL.esc(m.name) + '</b><div class="small muted">' + (m.task === 'tts' ? 'Texto a voz y clonación instantánea' : 'Conversión de voz en tiempo real') + ' · ~' + gb(m.approx_gb) + ' GB · Licencia: ' + VL.esc(m.license) + ' · ' + VL.esc(m.repo) + '</div></div>' +
-      (m.installed ? '<span class="badge" style="background:var(--ok-soft);color:var(--ok)">Instalado</span><button class="btn sm ghost" data-ai-del="' + m.id + '">Eliminar</button>'
+      (m.deprecated ? '<button class="btn sm" data-ai-del="' + m.id + '">Eliminar (libera ' + gb(m.approx_gb) + ' GB)</button>'
+        : m.installed ? '<span class="badge" style="background:var(--ok-soft);color:var(--ok)">Instalado</span><button class="btn sm ghost" data-ai-del="' + m.id + '">Eliminar</button>'
         : '<button class="btn sm" data-ai-get="' + m.id + '"' + (ai.runtime ? '' : ' disabled title="Instala primero el motor de IA"') + '>' + iconHTML('download') + 'Descargar</button>') + '</div>').join('') + '</div>' +
       '<div class="field-hint" style="margin-top:10px">Sin cuotas ni API de pago. La descarga se verifica con SHA-256 y se puede reanudar si se corta.</div>' +
       devicesHTML() + livePanelHTML();
@@ -96,7 +97,7 @@
   }
 
   // --------------------------------------------------------- texto a voz
-  function ttsReady() { return ai && ai.runtime && ai.models.some((m) => m.task === 'tts' && m.installed); }
+  function ttsReady() { return ai && ai.runtime && ai.models.some((m) => m.task === 'tts' && m.installed && !m.deprecated); }
 
   function renderTTS() {
     if (!ai) return;

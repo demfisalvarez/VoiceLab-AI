@@ -74,7 +74,7 @@
       title: 'Clonación de voz con IA local',
       text: 'Arrastra un audio o vídeo, elige el fragmento y VoiceLab AI creará un perfil de voz que conserve timbre, acento y forma de hablar.',
       items: ['MP3, WAV, FLAC, M4A, AAC, OGG, MP4, MKV, MOV y WEBM', 'Extracción automática del audio de los vídeos', 'Selección del fragmento sobre la forma de onda', 'Separación de la voz y el ruido de fondo', 'Indicador de si hay material suficiente para una buena clonación', 'Confirmación de autorización cuando la voz no es tuya'],
-      tech: [['Clonación instantánea (≈10 s)', 'Chatterbox Multilingual V3 · MIT'], ['Modelo entrenado (10–30 min)', 'RVC v2 · MIT'], ['Aceleración', 'ONNX Runtime + DirectML (RX 6600)'], ['Limpieza', 'DeepFilterNet3 · separación MDX']],
+      tech: [['Clonación instantánea (≈10 s)', 'Chatterbox Multilingual · MIT'], ['Modelo entrenado (10–30 min)', 'RVC v2 · MIT'], ['Aceleración', 'ONNX Runtime + DirectML (RX 6600)'], ['Limpieza', 'DeepFilterNet3 · separación MDX']],
     },
     create: {
       icon: 'record', phase: 3,
@@ -88,7 +88,7 @@
       title: 'Texto a voz con tus voces',
       text: 'Escribe cualquier texto y genera audio con cualquiera de tus perfiles, sin cuotas ni conexión a Internet.',
       items: ['Cuadro de texto amplio para textos largos', 'Selector de voz e idioma (23 idiomas, incluido español de España)', 'Velocidad, estabilidad, expresividad y similitud', 'Historial de generaciones', 'Exportar a WAV, MP3, FLAC y OGG'],
-      tech: [['Motor', 'Chatterbox Multilingual V3 · MIT'], ['Ejecución', 'ONNX Runtime + DirectML o CPU'], ['Marca de agua', 'PerTh inaudible en cada audio generado']],
+      tech: [['Motor', 'Chatterbox Multilingual · MIT'], ['Ejecución', 'ONNX Runtime + DirectML o CPU'], ['Marca de agua', 'PerTh inaudible en cada audio generado']],
     },
     editor: {
       icon: 'editor', phase: 6,
