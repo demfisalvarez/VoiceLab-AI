@@ -99,7 +99,7 @@ def send_json(f, obj: dict) -> None:
 
 # --------------------------------------------------------------------- modelo
 class Engine:
-    def __init__(self, code: str, weights: str, model: str, threads: int = 1):
+    def __init__(self, code: str, weights: str, model: str, threads: int = 1, hd: str | None = None):
         import numpy as np
         import torch
 
@@ -133,13 +133,26 @@ class Engine:
         for _ in range(3):                       # calentamiento de TorchScript
             self.runner.process_chunk(silence)
         self.runner._init_cache()
+        # Alta definición: AP-BWE amplía la salida de 16 kHz a 48 kHz (graves intactos, agudos nuevos).
+        self.bwe = None
+        self.out_sr = SR
+        if hd:
+            if not os.path.isfile(hd):
+                raise FileNotFoundError("Faltan los pesos de alta definición: " + hd)
+            sys.path.insert(0, os.path.join(os.path.dirname(code), "apbwe"))
+            import bwe as apbwe
+            model_bwe, h = apbwe.load(hd)
+            self.bwe = apbwe.StreamingBWE(model_bwe, h)
+            self.out_sr = h["hr_sampling_rate"]
+            self.bwe.process(np.zeros(CHUNK, np.float32))          # calentamiento
+            self.bwe.reset()
 
     def set_embedding(self, emb) -> None:
         t = self.torch.from_numpy(emb.reshape(1, EMB_DIM).astype("float32").copy())
         with self.torch.no_grad():
             self.runner.vc_spk_emb = t
             self.runner.vc_gtm_kv = self.runner.vc.gtm(t)
-        self.runner._init_cache()
+        self.reset()
         self.has_speaker = True
 
     def compute_embedding(self, audio):
@@ -178,7 +191,15 @@ class Engine:
 
     def process(self, chunk):
         out = self.runner.process_chunk(chunk.astype(self.np.float32))
-        return self.np.zeros(0, self.np.float32) if out is None else self.np.asarray(out, self.np.float32)
+        out = self.np.zeros(0, self.np.float32) if out is None else self.np.asarray(out, self.np.float32)
+        if self.bwe is not None:
+            out = self.bwe.process(out) if out.shape[0] else self.np.zeros(0, self.np.float32)
+        return out
+
+    def reset(self) -> None:
+        self.runner._init_cache()
+        if self.bwe is not None:
+            self.bwe.reset()
 
 
 def main(argv=None) -> int:
@@ -190,6 +211,7 @@ def main(argv=None) -> int:
     ap.add_argument("--weights", required=True)
     ap.add_argument("--model", default="120ms", choices=tuple(WEIGHT_FILES))
     ap.add_argument("--threads", type=int, default=1)
+    ap.add_argument("--hd", default=None, help="pesos de AP-BWE para salir a 48 kHz")
     args = ap.parse_args(argv)
 
     # El canal binario es una copia de stdout; cualquier print() de las
@@ -201,7 +223,7 @@ def main(argv=None) -> int:
 
     try:
         import numpy as np
-        eng = Engine(args.code, args.weights, args.model, args.threads)
+        eng = Engine(args.code, args.weights, args.model, args.threads, args.hd)
     except Exception as exc:  # noqa: BLE001
         traceback.print_exc()
         msg = f"{type(exc).__name__}: {exc}"
@@ -211,7 +233,8 @@ def main(argv=None) -> int:
         send_json(out, {"ok": False, "error": msg})
         return 2
     import torch
-    send_json(out, {"ok": True, "model": args.model, "chunk": CHUNK, "sr": SR, "torch": torch.__version__})
+    send_json(out, {"ok": True, "model": args.model, "chunk": CHUNK, "sr": SR, "out_sr": eng.out_sr,
+                    "hd": eng.bwe is not None, "torch": torch.__version__})
 
     while True:
         try:
@@ -229,7 +252,7 @@ def main(argv=None) -> int:
             elif kind == b"R":
                 send(out, b"E", eng.compute_embedding(np.frombuffer(data, np.float32)).tobytes())
             elif kind == b"Z":
-                eng.runner._init_cache()
+                eng.reset()
                 send_json(out, {"ok": True})
             elif kind == b"Q":
                 return 0

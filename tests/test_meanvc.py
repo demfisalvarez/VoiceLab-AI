@@ -457,3 +457,26 @@ def test_frozen_build_uses_bundled_uv_and_managed_python(tmp_path, monkeypatch):
     assert env["UV_PYTHON_DOWNLOADS"] == "never" and "UV_PYTHON_INSTALL_DIR" not in env
     assert not (exe_dir / "vc-python").exists()
     assert "torch==2.5.1" in calls[1][0]                       # Python 3.12 → PyTorch 2.5.1
+
+
+def test_direct_download_with_sha_and_drive_quota_page(monkeypatch):
+    data = b"pesos-apbwe" * 100
+    spec = models.CATALOG["apbwe"]["direct"][0]
+    monkeypatch.setitem(spec, "size", len(data))
+    monkeypatch.setitem(spec, "sha256", hashlib.sha256(data).hexdigest())
+    pages = {"html": False}
+
+    def urlopen(req, timeout=None, context=None):
+        assert req.full_url.startswith("https://drive.usercontent.google.com/download?id=")
+        if pages["html"]:
+            return _Resp(b"<html>Quota exceeded</html>", headers={"Content-Type": "text/html; charset=utf-8"})
+        return _Resp(data, headers={"Content-Type": "application/octet-stream"})
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    pages["html"] = True
+    with pytest.raises(RuntimeError, match="Google Drive"):
+        models.install("apbwe", lambda p: None)
+    assert not models.installed("apbwe")
+    pages["html"] = False
+    assert models.install("apbwe", lambda p: None)["installed"]
+    assert (models.model_dir("apbwe") / "apbwe_16kto48k.pt").read_bytes() == data and meanvc.hd_installed()
+    assert "--hd" in meanvc.worker_command("120ms", hd=True) and "--hd" not in meanvc.worker_command("120ms")

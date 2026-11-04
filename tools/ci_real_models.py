@@ -213,6 +213,34 @@ def test_live():
                 "f0_A": round(f0_median(a, SR), 1), "f0_B": round(f0_median(b, SR), 1),
                 "f0_convertida": round(f0_median(y, 16000), 1),
                 "rms_salida": round(float(np.sqrt(np.mean(y ** 2))), 4)})
+    # Alta definición (AP-BWE 16→48 kHz): descarga real desde Google Drive, velocidad y agudos.
+    t0 = time.perf_counter()
+    res["hd_instalacion"] = meanvc.install_hd(lambda p: None)
+    res["hd_instalacion_s"] = round(time.perf_counter() - t0, 1)
+    w = meanvc.MeanVCWorker(meanvc.worker_command("120ms", threads=2, hd=True))
+    try:
+        assert w.hello.get("out_sr") == 48000
+        w.set_embedding(emb)
+        outs, times = [], []
+        for i in range(0, x16.shape[0] - meanvc.CHUNK16, meanvc.CHUNK16):
+            t1 = time.perf_counter()
+            outs.append(w.process(x16[i:i + meanvc.CHUNK16]))
+            times.append(time.perf_counter() - t1)
+        y48 = np.concatenate(outs)
+    finally:
+        w.close()
+    mediaio.save_wav(OUT / "directo_A_a_B_hd.wav", y48, 48000)
+
+    def hf_db(z, sr):
+        Z = np.abs(np.fft.rfft(z)) ** 2
+        f = np.fft.rfftfreq(z.shape[0], 1 / sr)
+        return round(float(10 * np.log10(Z[f > 8500].sum() / Z.sum() + 1e-20)), 1)
+    res.update({"hd_ms_por_bloque_mediana": round(float(np.median(times)) * 1000, 1),
+                "hd_ms_por_bloque_p95": round(float(np.percentile(times, 95)) * 1000, 1),
+                "hd_agudos_sobre_8k_dB": hf_db(y48, 48000), "sin_hd_agudos_sobre_8k_dB": hf_db(y, 16000),
+                "hd_oido": oir(y48[: 48000 * 12], 48000, "en")})
+    res["hd_parecido"] = parecido(res["hd_oido"], res["oido_original"])
+    assert res["hd_parecido"] >= 0.85, "la alta definición estropea la voz"
     assert abs(res["segundos_salida"] - res["segundos_entrada"]) < 1.0, "la salida no dura lo mismo que la entrada"
     assert res["rms_salida"] > 0.005, "salida casi en silencio"
     assert res["ms_por_bloque_mediana"] < 160, "no llega a tiempo real en esta CPU"

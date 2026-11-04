@@ -56,6 +56,16 @@ CATALOG: dict[str, dict] = {
         "extra": [("NaruseMioShirakana/MoeSS-SUBModel", "vec-768-layer-12.onnx")],
         "approx_gb": 0.55,
     },
+    "apbwe": {
+        "name": "AP-BWE: alta definición 48 kHz para la voz en directo",
+        "task": "vc_hd", "license": "MIT (Ye-Xin Lu, USTC)",
+        "repo": "yxlu-0102/AP-BWE (pesos del autor en Google Drive)",
+        "files": [], "approx_gb": 0.12,
+        "direct": [{"file": "apbwe_16kto48k.pt", "size": 119097961,
+                    "sha256": "305a05dcab7dc29ffba09d32692d7a34550fc8fbdf338013641ff5d39a3cb285",
+                    "url": "https://drive.usercontent.google.com/download?id=1HYkD_5ha9GMrjzbTiSFiO1uQQwxXET15"
+                           "&export=download&confirm=t"}],
+    },
     "meanvc2": {
         "name": "MeanVC2: voz instantánea en directo (experimental)",
         "task": "vc_live", "license": "Apache 2.0 (ASLP-lab); codificador de hablante WavLM/ECAPA de Microsoft UniSpeech (MIT)",
@@ -129,7 +139,7 @@ def _remote_sizes(repo: str, folders=("",)) -> dict[str, dict]:
 
 
 def download_file(repo: str, path: str, dest: Path, expect: dict | None,
-                  progress: Callable[[int], None]) -> None:
+                  progress: Callable[[int], None], url: str | None = None) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and expect and expect.get("size") == dest.stat().st_size:
         progress(dest.stat().st_size)
@@ -139,8 +149,12 @@ def download_file(repo: str, path: str, dest: Path, expect: dict | None,
     headers = {"User-Agent": UA}
     if done:
         headers["Range"] = f"bytes={done}-"
-    req = urllib.request.Request(f"{HF}/{repo}/resolve/main/{path}", headers=headers)
+    req = urllib.request.Request(url or f"{HF}/{repo}/resolve/main/{path}", headers=headers)
     with urllib.request.urlopen(req, timeout=60, context=_ctx()) as r:  # noqa: S310
+        ctype = (r.headers.get("Content-Type", "") if getattr(r, "headers", None) else "") or ""
+        if url and "text/html" in ctype:  # Google Drive devuelve una página si hay límite de descargas
+            raise RuntimeError("El servidor de descarga (Google Drive) no entrega el archivo ahora mismo; "
+                               "suele ser un límite temporal. Vuelve a intentarlo más tarde.")
         if done and r.status != 206:      # el servidor no admite reanudar
             done = 0
             part.unlink(missing_ok=True)
@@ -179,6 +193,16 @@ def install(key: str, progress: Callable[[float], None]) -> dict:
     m = CATALOG[key]
     d = model_dir(key)
     d.mkdir(parents=True, exist_ok=True)
+    if m.get("direct"):                   # archivos con dirección fija (fuera de Hugging Face)
+        total = sum(f["size"] for f in m["direct"]) or 1
+        base = 0
+        for f in m["direct"]:
+            download_file("", f["file"], d / f["file"], {"size": f["size"], "sha256": f["sha256"]},
+                          lambda n, b=base: progress((b + n) / total * 0.98), url=f["url"])
+            base += f["size"]
+        (d / ".complete").write_text(json.dumps({"files": [f["file"] for f in m["direct"]]}), encoding="utf-8")
+        progress(1.0)
+        return {"id": key, "installed": True}
     wanted: list[tuple[list[str], str]] = [([m["repo"]], f) for f in m["files"]]
     wanted += [([r] if isinstance(r, str) else list(r), f) for r, f in m.get("extra", [])]
     cache: dict[tuple[str, str], dict] = {}

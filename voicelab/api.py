@@ -803,16 +803,17 @@ class AIApiMixin:
         else:
             from .ai import meanvc
             variant = self._settings.get("ai", "meanvc_variant")
+            hd = bool(self._settings.get("ai", "meanvc_hd")) and meanvc.hd_installed()
             cur = self._engine.ai
             inner = getattr(cur, "inner", cur)
             if (isinstance(inner, meanvc.RealtimeMeanVC) and inner.variant == variant and inner.sr == sr
-                    and inner.error is None and inner.w.alive):
+                    and (inner.out_sr > 16000) == hd and inner.error is None and inner.w.alive):
                 emb = meanvc.profile_embedding(inner.w, pdir)     # mismo proceso: solo cambia la voz
                 if gen == self._ai_gen:
                     inner.set_embedding(emb)
                     self._engine.set_ai(self._finish(inner, sr), close_old=False)   # por si cambió el acabado
                 return
-            worker = meanvc.MeanVCWorker(meanvc.worker_command(variant))
+            worker = meanvc.MeanVCWorker(meanvc.worker_command(variant, threads=2 if hd else 1, hd=hd))
             try:
                 worker.set_embedding(meanvc.profile_embedding(worker, pdir))
             except Exception:
@@ -902,7 +903,7 @@ class AIApiMixin:
             return res
         reload = (("sample_rate" in au and self._engine.ai is None)
                   or (typ == "rvc" and ("rvc_pitch" in v or "rvc_block" in v))
-                  or (typ == "instant" and ("instant_live" in v or "meanvc_variant" in a))
+                  or (typ == "instant" and ("instant_live" in v or "meanvc_variant" in a or "meanvc_hd" in a))
                   or "ai_polish" in v or "ai_clean_input" in v)
         if reload:
             res["job"] = self._ai_job(prof)
@@ -912,6 +913,10 @@ class AIApiMixin:
     def ai_install_live(self) -> dict:
         from .ai import meanvc
         return self._job("Instalando la voz instantánea en directo", meanvc.install)
+
+    def ai_install_hd(self) -> dict:
+        from .ai import meanvc
+        return self._job("Descargando la alta definición (48 kHz)", meanvc.install_hd)
 
     def ai_remove_live(self) -> dict:
         from .ai import meanvc

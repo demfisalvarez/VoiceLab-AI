@@ -93,7 +93,11 @@
       'Es gratuito y después funciona sin Internet. Al terminar se hace una prueba de velocidad en tu CPU. ¿Continuar?';
     if (!window.confirm(msg)) return;
     const res = await job(await VL.call('ai_install_live'));
-    if (res && res.installed) { VL.toast('ok', 'Voz instantánea en directo instalada. ' + benchText(res.bench)); voiceSig = ''; refresh(); }
+    if (res && res.installed) {
+      VL.toast('ok', 'Voz instantánea en directo instalada. ' + benchText(res.hd && res.bench_hd ? res.bench_hd : res.bench));
+      if (res.hd_error) VL.toast('info', 'La alta definición no se pudo descargar ahora (' + res.hd_error + '). Puedes reintentarlo desde el modulador.');
+      voiceSig = ''; refresh();
+    }
   }
 
   // --------------------------------------------------------- texto a voz
@@ -170,7 +174,8 @@
     const prof = profiles.find((p) => p.id === set.voice.profile_id);
     const live = ai && ai.live;
     const sig = JSON.stringify([prof && prof.id, prof && prof.type, prof && prof.has_reference, live && live.installed,
-      set.voice.instant_live, set.ai.meanvc_variant, set.voice.rvc_pitch, set.voice.ai_polish, set.voice.ai_clean_input]);
+      set.voice.instant_live, set.ai.meanvc_variant, set.voice.rvc_pitch, set.voice.ai_polish, set.voice.ai_clean_input,
+      set.ai.meanvc_hd, live && live.hd]);
     if (sig !== voiceSig) { voiceSig = sig; buildVoice(box, prof, live); }
     renderVoiceStatus(prof);
   }
@@ -211,11 +216,22 @@
         '<span><b>Hablar en directo con esta voz</b> <span class="badge" style="background:var(--warn-soft);color:var(--warn)">Experimental</span></span></label>' +
         '<div class="fx-row" style="margin-top:10px"><div class="field-label">Modo</div><select id="live-variant">' +
         Object.entries(live.variants).map(([k, v]) => '<option value="' + k + '"' + (k === set.ai.meanvc_variant ? ' selected' : '') + '>' + VL.esc(v) + '</option>').join('') +
-        '</select></div>' + qualityHTML() + '<div id="live-status" style="margin-top:10px"></div>' +
+        '</select></div>' + qualityHTML() +
+        (live.hd ? '<label class="checkbox" style="margin-top:8px" title="AP-BWE reconstruye los agudos (de 16 kHz a 48 kHz): voz más nítida y con más aire. Usa algo más de CPU y añade ~25 ms."><input type="checkbox" id="q-hd"' + (set.ai.meanvc_hd ? ' checked' : '') + '><span>Alta definición 48 kHz</span></label>'
+          : '<div class="small muted" style="margin-top:8px">Alta definición 48 kHz (más nitidez): <button class="link" id="q-hd-get">descargar ' + live.hd_mb + ' MB</button></div>') +
+        '<div id="live-status" style="margin-top:10px"></div>' +
         '<div class="field-hint" style="margin-top:8px">Conversión sin entrenamiento a partir de la referencia del perfil. Se parece menos que una voz RVC entrenada y el modelo se entrenó sobre todo con inglés y chino: en español la pronunciación puede sonar menos natural. La primera vez con cada voz tarda unos segundos más (calcula su huella).</div>';
       $('#live-on').onchange = async (e) => VL.applyResponse(await VL.call('update_settings', { voice: { instant_live: e.target.checked } }));
       $('#live-variant').onchange = async (e) => VL.applyResponse(await VL.call('update_settings', { ai: { meanvc_variant: e.target.value } }));
       bindQuality();
+      const hdc = $('#q-hd');
+      if (hdc) hdc.onchange = async () => VL.applyResponse(await VL.call('update_settings', { ai: { meanvc_hd: hdc.checked } }));
+      const hdg = $('#q-hd-get');
+      if (hdg) hdg.onclick = async () => {
+        const r = await job(await VL.call('ai_install_hd'));
+        if (r && r.hd) { VL.toast('ok', 'Alta definición lista. ' + benchText(r.bench_hd)); await refresh(); voiceSig = ''; renderVoice();
+          VL.applyResponse(await VL.call('activate_profile', VL.S.settings.voice.profile_id)); }
+      };
       return;
     }
     const pitch = set.voice.rvc_pitch;

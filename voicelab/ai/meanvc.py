@@ -175,16 +175,30 @@ def _runtime_version() -> tuple:
 def status() -> dict:
     m = models.CATALOG[MODEL_KEY]
     return {"installed": installed(), "runtime": runtime_ready(), "weights": models.installed(MODEL_KEY),
-            "supported": supported(),
+            "supported": supported(), "hd": hd_installed(), "hd_mb": 119,
             "name": m["name"], "license": m["license"], "repo": m["repo"],
             "download_gb": round(m["approx_gb"] + RUNTIME_DOWNLOAD_GB, 1),
             "disk_gb": round(m["approx_gb"] + RUNTIME_DISK_GB, 1),
-            "variants": VARIANTS, "bench": bench()}
+            "variants": VARIANTS, "bench": bench(), "bench_hd": bench_hd()}
 
 
-def worker_command(variant: str = "120ms", threads: int = 1) -> list[str]:
-    return [str(runtime_python()), "-I", str(worker_script()), "--code", str(code_dir()),
-            "--weights", str(weights_dir()), "--model", variant, "--threads", str(threads)]
+HD_KEY = "apbwe"
+
+
+def hd_installed() -> bool:
+    return models.installed(HD_KEY)
+
+
+def hd_weights() -> Path:
+    return models.model_dir(HD_KEY) / "apbwe_16kto48k.pt"
+
+
+def worker_command(variant: str = "120ms", threads: int = 1, hd: bool = False) -> list[str]:
+    cmd = [str(runtime_python()), "-I", str(worker_script()), "--code", str(code_dir()),
+           "--weights", str(weights_dir()), "--model", variant, "--threads", str(threads)]
+    if hd:
+        cmd += ["--hd", str(hd_weights())]
+    return cmd
 
 
 # ------------------------------------------------------------ instalación
@@ -264,13 +278,13 @@ def _check_no_junctions(d: Path) -> None:
         p = p.parent
 
 
-def selftest(variant: str = "120ms", seconds: float = 4.0) -> dict:
+def selftest(variant: str = "120ms", seconds: float = 4.0, hd: bool = False) -> dict:
     """Carga todo, calcula una huella de prueba y mide la velocidad real en este PC."""
     rng = np.random.default_rng(1)
     t = np.arange(int(SR16 * 2)) / SR16
     probe = (0.2 * np.sin(2 * np.pi * 140 * t) * (1 + 0.3 * np.sin(2 * np.pi * 3 * t))
              + 0.02 * rng.standard_normal(t.shape[0])).astype(np.float32)
-    w = MeanVCWorker(worker_command(variant))
+    w = MeanVCWorker(worker_command(variant, hd=hd))
     try:
         emb = w.compute_embedding(probe)
         if emb.shape != (proto.EMB_DIM,) or not np.all(np.isfinite(emb)):
@@ -286,7 +300,8 @@ def selftest(variant: str = "120ms", seconds: float = 4.0) -> dict:
             raise WorkerError("El modelo no devolvió audio en la prueba.")
         ms = float(np.median(times[1:]) * 1000)
         res = {"variant": variant, "ms_per_chunk": round(ms, 1), "chunk_ms": CHUNK16 / SR16 * 1000,
-               "rtf": round(ms / (CHUNK16 / SR16 * 1000), 3), "torch": w.hello.get("torch")}
+               "rtf": round(ms / (CHUNK16 / SR16 * 1000), 3), "torch": w.hello.get("torch"),
+               "hd": bool(w.hello.get("hd"))}
     finally:
         w.close()
     return res
@@ -305,12 +320,36 @@ def install(progress) -> dict:
     progress(0.9)
     res = selftest("120ms")
     (weights_dir() / "bench.json").write_text(json.dumps(res), encoding="utf-8")
+    hd_error = None
+    try:                                     # alta definición: opcional, no impide usar la voz en directo
+        install_hd(lambda p: progress(0.92 + p * 0.08))
+    except Exception as exc:  # noqa: BLE001
+        hd_error = str(exc)
+        log.warning("Alta definición no disponible: %s", exc)
     progress(1.0)
-    return {"installed": True, "bench": res}
+    return {"installed": True, "bench": res, "hd": hd_installed(), "hd_error": hd_error, "bench_hd": bench_hd()}
+
+
+def install_hd(progress) -> dict:
+    """Descarga AP-BWE (120 MB) y mide la velocidad con la alta definición activada."""
+    if not models.installed(HD_KEY):
+        models.install(HD_KEY, lambda p: progress(p * 0.7))
+    res = selftest("120ms", hd=True)
+    (models.model_dir(HD_KEY) / "bench.json").write_text(json.dumps(res), encoding="utf-8")
+    progress(1.0)
+    return {"hd": True, "bench_hd": res}
+
+
+def bench_hd() -> dict | None:
+    try:
+        return json.loads((models.model_dir(HD_KEY) / "bench.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 def remove() -> None:
     models.remove(MODEL_KEY)
+    models.remove(HD_KEY)
     d = runtime_dir()
     for _ in range(10):                        # Windows: las DLL tardan un instante en liberarse
         if not d.exists():
@@ -486,6 +525,7 @@ class RealtimeMeanVC:
     def __init__(self, worker: MeanVCWorker, sr: int = 48000, variant: str = "120ms", cushion_s: float = 0.12,
                  owns_worker: bool = True):
         self.w, self.sr, self.variant = worker, int(sr), variant
+        self.out_sr = int((getattr(worker, "hello", None) or {}).get("out_sr", SR16))
         self.owns_worker = owns_worker
         self.block = int(round(CHUNK16 * self.sr / SR16))          # 160 ms a la frecuencia del motor
         self.cushion = int(cushion_s * self.sr)
@@ -500,7 +540,9 @@ class RealtimeMeanVC:
         self._priming = True
         self._tmp = np.zeros(self.sr, np.float32)
         # Se crean aquí (en la tarea de carga) y no en el hilo, para no retrasar el primer audio.
-        self._rs_in, self._rs_out = StreamResampler(self.sr, SR16), StreamResampler(SR16, self.sr)
+        self._rs_in, self._rs_out = StreamResampler(self.sr, SR16), StreamResampler(self.out_sr, self.sr)
+        if self.out_sr != SR16:
+            self.lookahead += int(0.025 * self.sr)                  # contexto de la alta definición
         self._ev = threading.Event()
         self._stop = False
         self._t = threading.Thread(target=self._run, name="voz-instantanea", daemon=True)
