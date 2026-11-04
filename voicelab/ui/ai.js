@@ -111,6 +111,25 @@
     else if (!voices.length) note = '<div class="notice info" style="margin-bottom:12px">' + iconHTML('info') + '<div>Crea primero una voz en <button class="link" data-goto="clone">Clonar voz</button> o graba la tuya en <button class="link" data-goto="create">Crear voz</button>.</div></div>';
     $('#tts-engine-note').innerHTML = note;
     $('#tts-go').disabled = !ttsReady() || !voices.length;
+    if (ttsReady() && VL.S.page === 'tts') { VL.call('tts_preload'); watchTTS(); }
+  }
+
+  // Estado del motor (se carga en segundo plano al abrir la página).
+  let ttsTimer = null;
+  function watchTTS() {
+    if (ttsTimer) return;
+    const tick = async () => {
+      const r = await VL.call('tts_status');
+      const el = $('#tts-engine-state');
+      if (!r.ok || !el) return;
+      const t = r.tts;
+      el.innerHTML = t.state === 'loading' ? '<span class="spin-dot"></span> Preparando el motor… ' + VL.esc(t.stage || '') + ' <span class="muted">(la primera vez tarda 1–2 minutos; puedes ir escribiendo)</span>'
+        : t.state === 'ready' ? '● Motor listo' + (t.device === 'gpu' ? ' (GPU)' : ' (CPU)')
+        : t.state === 'error' ? 'No se pudo preparar el motor: ' + VL.esc(t.error || '') : '';
+      if (VL.S.page !== 'tts' || t.state === 'ready' || t.state === 'error') { clearInterval(ttsTimer); ttsTimer = null; }
+    };
+    ttsTimer = setInterval(tick, 1000);
+    tick();
   }
 
   async function renderTTSList() {

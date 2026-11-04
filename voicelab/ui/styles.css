@@ -502,3 +502,7 @@ input[type="text"]:focus, input[type="search"]:focus, textarea:focus { border-co
 .model-row { display: flex; align-items: center; gap: 10px; padding: 12px 4px; border-top: 1px solid var(--border); }
 .model-row:first-child { border-top: 0; }
 #tts-text { font-size: 15px; line-height: 1.6; min-height: 260px; }
+
+.spin-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 4px;
+  animation: vl-pulse 1s ease-in-out infinite; vertical-align: middle; }
+@keyframes vl-pulse { 50% { opacity: .25; } }

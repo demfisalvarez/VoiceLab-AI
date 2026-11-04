@@ -715,6 +715,18 @@ class AIApiMixin:
             return meta
         return self._job("Generando voz", work)
 
+    def tts_preload(self) -> dict:
+        """Empieza a cargar el modelo en segundo plano (la primera vez tarda 1–2 min)."""
+        from .ai import models, runtime, tts
+        key = self._settings.get("ai", "tts_model")
+        if runtime.available() and models.installed(key):
+            tts.service().preload(key, self._settings.get("ai", "tts_device") == "gpu")
+        return self.tts_status()
+
+    def tts_status(self) -> dict:
+        from .ai import tts
+        return self._ok(tts=tts.service().status())
+
     def tts_cancel(self) -> dict:
         from .ai import tts
         tts.service().cancel()

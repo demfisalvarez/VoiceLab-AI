@@ -252,6 +252,41 @@ class TTSService:
         self._lock = threading.Lock()
         self._factory = remote_factory or self._spawn
         self.last_device: str | None = None
+        self.state = "idle"            # idle · loading · ready · error
+        self.stage = ""
+        self.error: str | None = None
+
+    def _set_stage(self, text: str) -> None:
+        self.stage = text
+
+    def status(self) -> dict:
+        r = self._remote
+        ready = r is not None and r.alive
+        state = "ready" if ready and self.state != "loading" else self.state
+        return {"state": state, "stage": self.stage, "error": self.error,
+                "device": (r.info or {}).get("device") if ready else None}
+
+    def preload(self, model_key: str, gpu: bool) -> None:
+        """Carga el modelo en segundo plano (p. ej. al abrir la página de texto a voz)."""
+        if self._lock.locked() or (self._remote is not None and self._remote.alive and self._key == (model_key, gpu)):
+            return
+
+        def run():
+            from .procs import RemoteError
+            with self._lock:
+                self.state, self.error = "loading", None
+                try:
+                    self._ensure(model_key, gpu, self._set_stage)
+                    self.state = "ready"
+                except RemoteError as exc:
+                    self.state, self.error = "error", str(exc)
+                    if gpu:                              # la GPU no sirve: se queda preparada la CPU
+                        try:
+                            self._ensure(model_key, False, self._set_stage)
+                            self.state, self.error = "ready", None
+                        except RemoteError as exc2:
+                            self.error = str(exc2)
+        threading.Thread(target=run, name="precarga-texto-a-voz", daemon=True).start()
 
     @staticmethod
     def _spawn(model_key: str, gpu: bool, on_stage):
@@ -271,9 +306,19 @@ class TTSService:
         return self._remote
 
     def synthesize(self, model_key: str, gpu: bool, args: tuple, progress, on_stage) -> tuple[np.ndarray, dict]:
+        try:
+            return self._synthesize(model_key, gpu, args, progress, on_stage)
+        finally:
+            if self.state == "loading":
+                self.state = "ready" if self._remote is not None and self._remote.alive else "idle"
+
+    def _synthesize(self, model_key: str, gpu: bool, args: tuple, progress, on_stage) -> tuple[np.ndarray, dict]:
         """Devuelve (audio, info). ``info`` dice qué dispositivo se usó y si hubo que pasar a la CPU."""
         from .procs import RemoteError
+        if self._lock.locked():
+            on_stage("Terminando de cargar el modelo…")
         with self._lock:
+            self.state = "loading"
             info = {"device": "gpu" if gpu else "cpu", "fallback": None}
             try:
                 r = self._ensure(model_key, gpu, on_stage)
@@ -298,6 +343,7 @@ class TTSService:
                     raise TTSError(str(exc2)) from None
                 info["device"] = "cpu"
             self.last_device = info["device"]
+            self.state, self.error = "ready", None
             return wav, info
 
     def cancel(self) -> None:

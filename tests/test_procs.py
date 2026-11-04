@@ -96,3 +96,24 @@ def test_remote_rvc_proxy_and_gpu_fallback(monkeypatch):
     m = rvc.RemoteRVC("perfil-gpu_fail", "profile", True, remote_cls=cls)
     assert m.fallback and m.device == "cpu"
     m.close()
+
+
+def test_tts_service_preload_then_synthesize_reuses_process():
+    made = []
+
+    def factory(model_key, gpu, on_stage):
+        made.append(gpu)
+        return Remote("fake_remote_obj:make", ("cpu",), name="motor de texto a voz", log_name="prueba",
+                      on_stage=on_stage)
+    svc = tts.TTSService(remote_factory=factory)
+    assert svc.status()["state"] == "idle"
+    svc.preload("m", False)
+    for _ in range(100):
+        if svc.status()["state"] == "ready":
+            break
+        time.sleep(0.05)
+    assert svc.status()["state"] == "ready" and svc.status()["device"] == "cpu"
+    svc.preload("m", False)                                  # ya cargado: no hace nada
+    wav, info = svc.synthesize("m", False, ("hola",), None, lambda s: None)
+    assert made == [False] and wav.shape == (10,)
+    svc.unload()
