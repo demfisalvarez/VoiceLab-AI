@@ -3,6 +3,10 @@
 name: Calidad voz en directo
 on:
   workflow_dispatch:
+    inputs:
+      script:
+        description: "Script de tools/ a ejecutar"
+        default: "ci_live_quality.py"
 defaults:
   run:
     shell: pwsh
@@ -29,7 +33,7 @@ jobs:
           key: modelos-${{ hashFiles('voicelab/ai/models.py', 'voicelab/ai/meanvc.py') }}
           restore-keys: modelos-
       - name: Calidad y retraso
-        run: python tools/ci_live_quality.py ci-out
+        run: python tools/${{ inputs.script || 'ci_live_quality.py' }} ci-out
       - name: Registros
         if: always()
         run: |

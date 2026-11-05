@@ -576,11 +576,13 @@ class RealtimeMeanVC:
         self.chunk16 = int(hello.get("chunk", CHUNK16))
         self.align16 = int(hello.get("align", 0))
         self.hold_ms = float(hello.get("hold_ms", 0.0))
+        # Vaivén de la salida (p. ej. 120/120/240 ms): ya va incluido en «hold_ms», que es el máximo
+        # retenido; el margen solo cubre lo que varía el tiempo de cálculo.
         self.burst = int(float(hello.get("burst_ms", 0.0)) / 1000 * self.sr)
         self.block = int(round(self.chunk16 * self.sr / SR16))
-        self._mmin = int(self.MARGIN_MIN_S * self.sr) + self.burst
-        self._mmax = int(self.MARGIN_MAX_S * self.sr) + self.burst
-        self.margin = max(self._mmin, int((self.MARGIN_S if margin_s is None else margin_s) * self.sr) + self.burst)
+        self._mmin = int(self.MARGIN_MIN_S * self.sr)
+        self._mmax = int(self.MARGIN_MAX_S * self.sr)
+        self.margin = max(self._mmin, int((self.MARGIN_S if margin_s is None else margin_s) * self.sr))
         self.inq = RingBuffer(self.sr * 10)
         self.outq = RingBuffer(self.sr * 10)
         self.infer_ms = 0.0
@@ -589,6 +591,7 @@ class RealtimeMeanVC:
         self.trimmed = 0                                    # salida sobrante quitada en silencios
         self.error: str | None = None
         self._skipped = 0                                   # alineación inicial (no es pérdida)
+        self._lost = 0                                      # lo que el proceso tira al cambiar de voz
         self._in_total = 0
         self._out_real = 0
         self._priming = True
@@ -617,8 +620,9 @@ class RealtimeMeanVC:
 
     # -- información
     def _estimate(self) -> float:
-        """Retraso esperado antes de medirlo: bloque + lo que retiene el modelo + cálculo + margen."""
-        return self.block + self.hold_ms / 1000 * self.sr + self.infer_ms / 1000 * self.sr + self.margin
+        """Retraso necesario: bloque + lo que retiene el modelo (como mucho) + cálculo + margen."""
+        return (self.block + self.hold_ms / 1000 * self.sr + 1.15 * self.infer_ms / 1000 * self.sr
+                + self.margin)
 
     @property
     def latency_samples(self) -> int:
@@ -651,8 +655,10 @@ class RealtimeMeanVC:
             if avail == 0:
                 return out
             self._priming = False
-            # El margen, en silencio, antes de la voz (y lo que le falte al primer bloque, que sale corto).
-            self._lead = self.margin + max(0, self.block - avail)
+            # Arranca justo en el retraso necesario (bloque + lo retenido + cálculo + margen): lo que
+            # falte hasta ahí se pone en silencio delante; con eso no hay cortes y no sobra retraso.
+            now = self._in_total - self.dropped - self._skipped
+            self._lead = max(0, int(self._estimate()) - now)
         pos = 0
         if self._lead:
             pos = min(self._lead, n)
@@ -687,7 +693,8 @@ class RealtimeMeanVC:
                 self.underruns += 1
                 self._win_under += 1
             self._fade_in = True
-        self._lat = float(self._in_total - self.dropped - self._skipped - self.trimmed - self._out_real)
+        self._lat = float(self._in_total - self.dropped - self._skipped - self.trimmed - self._lost
+                          - self._out_real)
         level = self.outq.available()
         self._win_min = level if self._win_min is None else min(self._win_min, level)
         self._win_n += n
@@ -740,6 +747,10 @@ class RealtimeMeanVC:
                     self._realign = False
                     pend = np.zeros(0, np.float32)
                     self._skip16 = self.align16
+                    # Lo que estaba dentro del proceso no saldrá: no cuenta como retraso.
+                    inside = (self._in_total - self.dropped - self._skipped - self.trimmed - self._lost
+                              - self._out_real - self.outq.available() - self.inq.available())
+                    self._lost += max(0, int(inside))
                 n = self.inq.available()
                 if n == 0:
                     break
