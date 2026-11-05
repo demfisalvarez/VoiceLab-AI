@@ -220,6 +220,10 @@
             '<div class="field"><div class="field-label">' + esc(r.label) + '</div><select data-select="audio.' + r.key + '_device" data-route-select="' + r.key + '"></select></div>' +
             '<div class="field"><div class="field-label">Volumen</div><div class="range-field" data-range="audio.' + r.key + '_volume_db" data-min="-60" data-max="12" data-step="0.5"><input type="range"><input type="number"><span class="unit">dB</span></div></div>' +
             (r.key === 'monitor' ? '<div class="field"><div class="field-label">Qué escuchas</div><select data-select="audio.monitor_source"><option value="processed">Mi voz con efectos</option><option value="original">Mi micrófono original (sin efectos)</option></select></div>' : '') +
+            (r.key === 'cable' ? '<div class="field" style="grid-column:1/-1;display:flex;gap:12px;align-items:flex-start">' +
+              '<button class="switch" role="switch" data-switch="audio.system_mic" aria-label="Usar en todas las apps" style="margin-top:2px;flex:none"></button>' +
+              '<div><b>En todas las apps</b><div class="field-hint" style="margin-top:2px">Mientras el modulador está encendido, el micrófono virtual pasa a ser el <b>micrófono predeterminado de Windows</b>: juegos, editores de vídeo y cualquier programa que use el micrófono predeterminado reciben tu voz modulada sin configurar nada. Al parar el modulador vuelve tu micrófono de siempre.</div>' +
+              '<div data-r="sysmic" style="margin-top:6px"></div></div></div>' : '') +
           '</div>' +
           '<div class="meter-h" data-meter="route-' + r.key + '"><div class="fill"></div><div class="peak"></div></div>' +
           '<div class="route-stats"><span>Latencia <b class="num" data-r="lat">—</b></span><span>Cortes <b class="num" data-r="under">0</b></span><span data-r="limit"></span><span style="flex:1"></span>' +
@@ -432,6 +436,13 @@
       row.querySelector('[data-r="under"]').textContent = info.underruns || 0;
       row.querySelector('[data-r="limit"]').innerHTML = info.limiting ? '<span style="color:var(--warn)">Limitador actuando</span>' : '';
       meters['route-' + r.key].set(info.active ? info.peak_db : -120);
+      if (r.key === 'cable') {
+        const sm = st.system_mic, box = row.querySelector('[data-r="sysmic"]');
+        let t = '';
+        if (sm && sm.error) t = '<div class="notice warn">' + iconHTML('alert') + '<div>' + esc(sm.error) + '</div></div>';
+        else if (sm && sm.engaged) t = '<div class="small" style="color:var(--ok)">' + iconHTML('check') + ' Ahora el micrófono predeterminado de Windows es «' + esc(sm.device || 'CABLE Output') + '». Si un programa ya estaba abierto y no te oye modulado, elige «Predeterminado» como micrófono o reinícialo.</div>';
+        if (box && box.dataset.html !== t) { box.dataset.html = t; box.innerHTML = t; }
+      }
       const errBox = row.querySelector('[data-r="error"]');
       const errText = info.enabled && info.error ? info.error : '';
       if (errBox.dataset.text !== errText) {

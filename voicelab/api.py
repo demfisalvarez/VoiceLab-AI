@@ -131,6 +131,7 @@ class Api:
         return self._ok()
 
     def get_initial_state(self) -> dict:
+        self._sync_system_mic()             # si la app se cerró de golpe, devuelve el micrófono de antes
         return self._ok(
             app={"name": APP_NAME, "version": __version__, "phase": CURRENT_PHASE,
                  "platform": sys.platform},
@@ -168,8 +169,11 @@ class Api:
                 try:
                     self._engine.apply(self._engine_config())
                 except EngineError as exc:
+                    self._sync_system_mic()
                     return self._fail(str(exc), settings=self._settings.snapshot(),
                                       status=self._engine.status(), **result)
+            if "audio" in changed:
+                self._sync_system_mic()
         return self._ok(settings=self._settings.snapshot(), status=self._engine.status(), **result)
 
     # --------------------------------------------------------------- motor
@@ -178,15 +182,52 @@ class Api:
             self._engine.start(self._engine_config())
         except EngineError as exc:
             log.warning("No se pudo iniciar el motor: %s", exc)
+            self._sync_system_mic()
             return self._fail(str(exc), status=self._engine.status())
         except Exception as exc:  # pragma: no cover - errores inesperados
             log.exception("Fallo inesperado al iniciar el motor")
             return self._fail(f"Error inesperado al iniciar el audio: {exc}", status=self._engine.status())
+        self._sync_system_mic()
         return self._ok(status=self._engine.status())
 
     def stop_engine(self) -> dict:
         self._engine.stop()
+        self._sync_system_mic()
         return self._ok(status=self._engine.status())
+
+    # ------------------------------------------- micrófono de todas las apps
+    def _system_mic(self):
+        sm = getattr(self, "_sysmic", None)
+        if sm is None:
+            from .audio.systemmic import SystemMic
+            sm = self._sysmic = SystemMic()
+        return sm
+
+    def _sync_system_mic(self) -> None:
+        """Con el modulador encendido (y la ruta del cable activa), el cable es el micrófono
+        predeterminado de Windows; si no, se restaura el que había."""
+        try:
+            sm = self._system_mic()
+            if not sm.supported:
+                return
+            st = self._engine.status()
+            cable = st["routes"]["cable"]
+            want = bool(st["running"] and cable["active"] and self._settings.get("audio", "system_mic"))
+            if want and not sm.engaged:
+                if st["input"]["device"]:
+                    self._devices.fallback_input = st["input"]["device"]    # seguir usando el micrófono real
+                sm.engage(cable["device"])
+            elif not want and (sm.engaged or sm.state_file.exists()):
+                sm.release()
+            self._engine.extras["system_mic"] = sm.status()
+        except Exception:  # noqa: BLE001
+            log.exception("Micrófono predeterminado de Windows")
+
+    def shutdown_system_mic(self) -> None:
+        """Al cerrar la app: se devuelve el micrófono predeterminado de antes."""
+        sm = getattr(self, "_sysmic", None)
+        if sm is not None and sm.supported and (sm.engaged or sm.state_file.exists()):
+            sm.release()
 
     def toggle_engine(self) -> dict:
         if self._engine.running:

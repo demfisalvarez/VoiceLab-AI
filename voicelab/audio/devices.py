@@ -92,6 +92,8 @@ def load_sounddevice():
 
 
 class DeviceManager:
+    fallback_input: str | None = None
+
     def __init__(self, sd_module=None):
         self._lock = threading.RLock()
         self.error: str | None = None
@@ -199,6 +201,10 @@ class DeviceManager:
         ins = self.inputs(hostapi)
         for d in ins:
             if d.is_default_input and d.kind != "vbcable_record":
+                return d
+        # El predeterminado de Windows es el cable (opción «en todas las apps»): el micrófono real de antes.
+        for d in ins:
+            if self.fallback_input and d.name == self.fallback_input:
                 return d
         for d in ins:
             if d.kind == "physical":

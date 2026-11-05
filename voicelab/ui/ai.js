@@ -176,8 +176,80 @@
     const sig = JSON.stringify([prof && prof.id, prof && prof.type, prof && prof.has_reference, live && live.installed,
       set.voice.instant_live, set.ai.meanvc_variant, set.voice.rvc_pitch, set.voice.ai_polish, set.voice.ai_clean_input,
       set.ai.meanvc_hd, live && live.hd]);
-    if (sig !== voiceSig) { voiceSig = sig; buildVoice(box, prof, live); }
+    if (sig !== voiceSig) { voiceSig = sig; buildVoice(box, prof, live); if (prof && prof.type === 'instant') box.insertAdjacentHTML('beforeend', '<div id="train-box" style="margin-top:14px"></div>'); }
     renderVoiceStatus(prof);
+    if (prof && prof.type === 'instant') trainTick(prof);
+  }
+
+  // ------------------------------------------------ entrenar una voz fiel
+  let trainInfo = null, trainFor = null, trainAt = 0, trainBusy = false, trainWas = '';
+  const TRAIN_ACTIVE = ['starting', 'preparing', 'training', 'finishing'];
+  function fmtEta(s) {
+    s = Math.max(0, Math.round(s || 0));
+    const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+    return h ? h + ' h ' + m + ' min' : m + ' min';
+  }
+  async function trainTick(prof, force) {
+    const active = trainInfo && TRAIN_ACTIVE.includes((trainInfo.status || {}).state);
+    if (!force && trainFor === prof.id && Date.now() - trainAt < (active ? 2000 : 20000)) { paintTrain(prof); return; }
+    if (trainBusy) return;
+    trainBusy = true; trainAt = Date.now();
+    try {
+      const r = await VL.call('rvc_train_info', prof.id);
+      if (r.ok) { trainInfo = r.train; trainFor = prof.id; }
+    } finally { trainBusy = false; }
+    const st = (trainInfo && trainInfo.status) || {};
+    if (trainWas && TRAIN_ACTIVE.includes(trainWas) && st.state === 'done') {
+      VL.toast('ok', 'Voz fiel lista. Pulsa «Usar la voz fiel» para hablar con ella en directo.');
+      refresh();
+    }
+    trainWas = st.state || '';
+    paintTrain(prof);
+  }
+  function paintTrain(prof) {
+    const el = $('#train-box');
+    if (!el || !trainInfo || trainFor !== prof.id) return;
+    const t = trainInfo, st = t.status || {};
+    const active = TRAIN_ACTIVE.includes(st.state);
+    let html;
+    if (active && st.profile_id === prof.id) {
+      const pct = Math.round((st.progress || 0) * 100);
+      html = '<div class="notice info">' + iconHTML('sparkles') + '<div style="flex:1"><b>Entrenando la voz fiel</b> · ' + pct + ' %' +
+        (st.eta_s ? ' · quedan ≈ ' + fmtEta(st.eta_s) : '') +
+        '<div class="progress" style="margin:8px 0"><i style="width:' + pct + '%"></i></div>' +
+        '<div class="small muted">' + VL.esc(st.phase || '') + (st.data_minutes ? ' · ' + st.data_minutes + ' min de voz' : '') + '</div>' +
+        '<div class="small muted" style="margin-top:4px">Puedes seguir usando el PC (va con prioridad baja). Si cierras la app, se guarda y luego puedes continuar.</div>' +
+        '<button class="btn sm" id="train-stop" style="margin-top:8px">Parar y usar lo aprendido</button></div></div>';
+    } else if (active) {
+      html = '<div class="notice info">' + iconHTML('info') + '<div>Se está entrenando «' + VL.esc(st.name || '') + '». Cuando termine podrás entrenar esta.</div></div>';
+    } else if (!t.material || t.speech_s < t.min_s) {
+      html = '<div class="notice info">' + iconHTML('info') + '<div><b>¿Quieres que suene mucho más fiel?</b> Se puede entrenar un modelo con esta voz, pero hace falta al menos 1 minuto de voz (mejor 10 min o más)' +
+        (t.speech_s ? ': este perfil tiene ' + t.speech_s + ' s' : '') + '. Crea el perfil en «Clonar voz» con un audio más largo.</div></div>';
+    } else {
+      const mins = Math.round(t.speech_s / 60);
+      const opts = Object.entries(t.durations).map(([k, v]) => '<option value="' + k + '"' + (k === '120' ? ' selected' : '') + '>' + VL.esc(v) + '</option>').join('');
+      html = '<div class="card" style="padding:14px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">' + iconHTML('sparkles') + '<b>Voz fiel (entrenada)</b></div>' +
+        '<div class="small muted">Entrena con tus ' + mins + ' min de voz un modelo RVC mucho más parecido que la voz instantánea, para hablar en directo con ~0,15–0,2 s de retraso (con la GPU). ' +
+        'Se hace una vez, en tu PC, con prioridad baja; puedes pararlo cuando quieras y se queda lo aprendido.' + (t.speech_s < t.good_s ? ' Con más audio (10 min o más) queda aún más fiel.' : '') + '</div>' +
+        (st.state === 'error' ? '<div class="notice warn" style="margin-top:8px">' + iconHTML('alert') + '<div>' + VL.esc(st.error || st.phase || '') + '</div></div>' : '') +
+        '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap"><select id="train-min">' + opts + '</select>' +
+        (t.trained_profile
+          ? '<button class="btn sm primary" id="train-use">Usar la voz fiel</button><button class="btn sm" id="train-more">Seguir entrenando</button>'
+          : '<button class="btn sm primary" id="train-go">' + (t.checkpoint ? 'Continuar el entrenamiento' : 'Entrenar voz fiel') + '</button>') +
+        '</div></div>';
+    }
+    if (el.dataset.html === html) return;
+    el.dataset.html = html; el.innerHTML = html;
+    const go = async (extend) => {
+      const minutes = parseFloat(($('#train-min') || {}).value || '120');
+      const r = await VL.call('rvc_train_start', prof.id, minutes, !!extend);
+      if (!r.ok) { VL.toast('err', r.error); return; }
+      trainInfo.status = r.status; trainWas = r.status.state; paintTrain(prof); trainTick(prof, true);
+    };
+    const b1 = $('#train-go'); if (b1) b1.onclick = () => go(false);
+    const b2 = $('#train-more'); if (b2) b2.onclick = () => go(true);
+    const b3 = $('#train-use'); if (b3) b3.onclick = async () => VL.applyResponse(await VL.call('activate_profile', t.trained_profile));
+    const b4 = $('#train-stop'); if (b4) b4.onclick = async () => { b4.disabled = true; const r = await VL.call('rvc_train_stop'); if (r.ok) { trainInfo.status = r.status; paintTrain(prof); } };
   }
 
   // Acabado de estudio: limpieza antes de la IA y producción (de-esser, compresión, nivel) después.

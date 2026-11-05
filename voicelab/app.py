@@ -263,6 +263,10 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         engine.stop()
         try:
+            api.shutdown_system_mic()           # vuelve el micrófono predeterminado de antes
+        except Exception:  # noqa: BLE001
+            log.exception("Al restaurar el micrófono predeterminado")
+        try:
             engine.set_ai(None)                 # cierra los procesos de IA en directo
             from .ai import rvc_train, tts
             tts.unload()

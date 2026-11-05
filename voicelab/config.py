@@ -81,6 +81,7 @@ SCHEMA: dict[str, dict[str, tuple[Any, Callable[[Any], Any]]]] = {
         "gate_threshold_db": (-50.0, _float_range(-80.0, 0.0)),
         "cable_device": (None, _opt_str),
         "cable_enabled": (True, _bool),
+        "system_mic": (True, _bool),      # el cable como micrófono predeterminado de Windows mientras se modula
         "cable_volume_db": (0.0, _float_range(-60.0, 12.0)),
         "monitor_device": (None, _opt_str),
         "monitor_enabled": (False, _bool),

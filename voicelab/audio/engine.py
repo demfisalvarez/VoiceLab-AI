@@ -236,6 +236,7 @@ class AudioEngine:
         # Fase 1: puerta de ruido. Las fases siguientes añaden efectos e IA.
         self._chain = VoiceChain(48000)
         self._ai = None   # conversión de voz por IA (Fase 4): procesador con .process()
+        self.extras: dict = {}   # estado que añade la app (p. ej. el micrófono predeterminado de Windows)
         self._processors: tuple = (self._gate, self._chain)
         self._tone_threads: list[threading.Thread] = []
 
@@ -577,6 +578,7 @@ class AudioEngine:
                     "variant": getattr(self._ai, "variant", None),
                     "dropped_ms": round(getattr(self._ai, "dropped", 0) / sr * 1000.0),
                     "error": getattr(self._ai, "error", None)},
+                **self.extras,
             }
 
     # ======================================================= tono de prueba
