@@ -150,8 +150,42 @@ def new_generator():
     return SynthesizerTrnMs768NSFsid(d["filter_length"] // 2 + 1, SEGMENT // HOP, **HP["model"], is_half=False, sr=SR)
 
 
+def _export_safe_attention() -> None:
+    """Atención relativa sin ``int()``/``max()`` de Python sobre la longitud.
+
+    Al exportar con trazado, esas conversiones dejan fija la longitud del ejemplo y el
+    modelo falla (o se equivoca) con otras. Estas versiones hacen lo mismo con
+    operaciones que ONNX mantiene dinámicas (como el exportador de RVC original).
+    """
+    import torch.nn.functional as F
+    from rvc import attentions
+    mha = attentions.MultiHeadAttention
+    pad_max = 4096                                         # hasta 41 s por llamada
+
+    def get_relative_embeddings(self, rel, length):
+        start = pad_max + self.window_size + 1 - length
+        return F.pad(rel, [0, 0, pad_max, pad_max, 0, 0])[:, start:start + 2 * length - 1]
+
+    def rel_to_abs(self, x):
+        batch, heads, length, _ = x.size()
+        x = F.pad(x, [0, 1, 0, 0, 0, 0, 0, 0])
+        x_flat = F.pad(x.view([batch, heads, length * 2 * length]), [0, length - 1, 0, 0, 0, 0])
+        return x_flat.view([batch, heads, length + 1, 2 * length - 1])[:, :, :length, length - 1:]
+
+    def abs_to_rel(self, x):
+        batch, heads, length, _ = x.size()
+        x = F.pad(x, [0, length - 1, 0, 0, 0, 0, 0, 0])
+        x_flat = F.pad(x.view([batch, heads, length * length + length * (length - 1)]), [length, 0, 0, 0, 0, 0])
+        return x_flat.view([batch, heads, length, 2 * length])[:, :, :, 1:]
+
+    mha._get_relative_embeddings = get_relative_embeddings
+    mha._relative_position_to_absolute_position = rel_to_abs
+    mha._absolute_position_to_relative_position = abs_to_rel
+
+
 def export_onnx(net_g, path: Path) -> None:
     import torch
+    _export_safe_attention()
     g = new_generator()                        # copia limpia (deepcopy no admite weight_norm tras entrenar)
     g.load_state_dict(net_g.state_dict())
     g = g.float().eval()

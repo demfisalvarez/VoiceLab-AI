@@ -131,6 +131,8 @@ def main() -> int:
                         "oido": heard, "inteligible": R.parecido(heard, R.TEXT_A), "f0_salida": f0_out,
                         "f0_destino": REPORT["datos"]["f0_median"]}
     mediaio.save_wav(OUT / "entrenada_convertida.wav", y, m.sr)
+    for secs in (0.3, 1.0, 2.7, 9.5):                      # longitudes distintas a la del ejemplo exportado
+        assert m.convert16(x16[: int(secs * 16000)]).shape[0] > 0
     yk = m.convert16(x16, keep=100)
     REPORT["modelo"]["skip_head_ok"] = abs(yk.shape[0] - 100 * m.sr // 100) <= m.sr // 100
     print(REPORT["modelo"], flush=True)
