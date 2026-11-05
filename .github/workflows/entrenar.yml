@@ -1,0 +1,47 @@
+# Entrenamiento real de una voz RVC (de principio a fin) en Windows. Manual.
+name: Entrenar voz RVC
+on:
+  workflow_dispatch:
+    inputs:
+      pasos:
+        description: "Pasos de entrenamiento"
+        default: "40"
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  entrenar:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      VOICELAB_DATA_DIR: ${{ github.workspace }}\ci-out\datos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Dependencias
+        run: python -m pip install -r requirements.txt onnxruntime-directml tokenizers faster-whisper
+      - name: Caché de modelos
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ci-out/datos/models
+            ci-out/datos/vc-runtime
+          key: modelos-${{ hashFiles('voicelab/ai/models.py', 'voicelab/ai/meanvc.py') }}
+          restore-keys: modelos-
+      - name: Entrenar
+        run: python tools/ci_train.py ci-out ${{ inputs.pasos }}
+      - name: Registros
+        if: always()
+        run: |
+          if (Test-Path ci-out\datos\logs) { Get-ChildItem ci-out\datos\logs | ForEach-Object { "----- $($_.Name)"; Get-Content $_.FullName -Tail 60 } }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: entrenamiento
+          path: |
+            ci-out/*.wav
+            ci-out/*.json
+            ci-out/entreno/model.onnx

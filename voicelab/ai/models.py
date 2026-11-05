@@ -56,6 +56,13 @@ CATALOG: dict[str, dict] = {
         "extra": [("NaruseMioShirakana/MoeSS-SUBModel", "vec-768-layer-12.onnx")],
         "approx_gb": 0.55,
     },
+    "rvc-train": {
+        "name": "Base para entrenar voces fieles (RVC v2, 40 kHz)",
+        "task": "rvc_train", "license": "MIT (RVC-Project)",
+        "repo": "lj1995/VoiceConversionWebUI",
+        "files": ["pretrained_v2/f0G40k.pth", "pretrained_v2/f0D40k.pth"],
+        "approx_gb": 0.21,
+    },
     "apbwe": {
         "name": "AP-BWE: alta definición 48 kHz para la voz en directo",
         "task": "vc_hd", "license": "MIT (Ye-Xin Lu, USTC)",

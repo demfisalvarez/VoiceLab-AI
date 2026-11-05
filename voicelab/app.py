@@ -264,8 +264,10 @@ def main(argv: list[str] | None = None) -> int:
         engine.stop()
         try:
             engine.set_ai(None)                 # cierra los procesos de IA en directo
-            from .ai import tts
+            from .ai import rvc_train, tts
             tts.unload()
+            if rvc_train._manager is not None:  # noqa: SLF001  el entrenamiento guarda y se podrá seguir
+                rvc_train._manager.shutdown()  # noqa: SLF001
         except Exception:  # noqa: BLE001
             log.exception("Al cerrar los procesos de IA")
         try:

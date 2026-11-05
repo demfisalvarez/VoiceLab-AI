@@ -20,6 +20,7 @@ datas = [
     # La voz en directo se ejecuta con otro Python (el de PyTorch): necesita los archivos reales.
     (r("voicelab", "ai", "vendor"), "voicelab/ai/vendor"),
     (r("voicelab", "ai", "meanvc_worker.py"), "voicelab/ai"),
+    (r("voicelab", "ai", "rvc_trainer.py"), "voicelab/ai"),
 ]
 binaries = []
 hidden = collect_submodules("voicelab", filter=lambda name: ".vendor" not in name) + [

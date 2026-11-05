@@ -188,6 +188,7 @@ def main() -> int:
     ap.add_argument("--batch", type=int, default=8)
     ap.add_argument("--max-frames", type=int, default=200, help="tramas por ejemplo (2 s): más rápido en CPU")
     ap.add_argument("--save-every", type=float, default=600.0, help="segundos entre puntos de control")
+    ap.add_argument("--extend", action="store_true", help="seguir entrenando «--minutes» más tras terminar")
     args = ap.parse_args()
     sys.path.insert(0, args.code)
     out = Path(args.out)
@@ -225,7 +226,7 @@ def main() -> int:
             optim_g.load_state_dict(st["og"])
             optim_d.load_state_dict(st["od"])
             step, spent = int(st["step"]), float(st["spent"])
-            total = int(st["total"])
+            total = 0 if args.extend else int(st["total"])
         else:
             net_g.load_state_dict(load_state(Path(args.pretrain_g))["model"])
             net_d.load_state_dict(load_state(Path(args.pretrain_d))["model"])
@@ -277,7 +278,7 @@ def main() -> int:
             mel_avg = lm if mel_avg is None else 0.95 * mel_avg + 0.05 * lm
             per_step = (time.monotonic() - started) / max(1, step - step0)
             if total == 0 and step - step0 >= 5:          # presupuesto en minutos → pasos
-                total = max(step + 1, int(args.minutes * 60 / per_step))
+                total = max(step + 1, step0 + int(args.minutes * 60 / per_step))
             now = time.monotonic()
             if now - last_emit >= 5 or step == total:
                 last_emit = now

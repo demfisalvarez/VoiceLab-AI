@@ -7,7 +7,9 @@ empiezan por ``_`` no se exponen a JavaScript.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import subprocess
 from pathlib import Path
 import sys
@@ -763,6 +765,89 @@ class AIApiMixin:
                                                      "source": src.name}), encoding="utf-8")
             return self._profiles.update(prof["id"], {"model": {"kind": "rvc", "sr": model.sr, "source": src.name}})
         return self._job("Importando el modelo RVC", work)
+
+    # ------------------------------------------ entrenar una voz fiel (RVC)
+    def rvc_train_info(self, profile_id: str) -> dict:
+        """Lo que la interfaz necesita para ofrecer «Entrenar voz fiel» en un perfil."""
+        from .ai import meanvc, rvc_train
+        try:
+            prof = self._profiles.get(profile_id)
+        except ProfileError as exc:
+            return self._fail(str(exc))
+        pdir = self._profiles.path(profile_id)
+        speech = float((prof.get("cloning") or {}).get("analysis", {}).get("speech_s", 0) or 0)
+        wd = rvc_train.work_dir(profile_id)
+        link = wd / "profile.json"
+        trained = None
+        if link.exists():
+            try:
+                trained = self._profiles.get(json.loads(link.read_text(encoding="utf-8"))["profile_id"])["id"]
+            except Exception:  # noqa: BLE001
+                trained = None
+        return self._ok(train={
+            "material": rvc_train.material(pdir) is not None, "speech_s": round(speech),
+            "min_s": rvc_train.MIN_SPEECH_S, "good_s": rvc_train.GOOD_SPEECH_S,
+            "durations": rvc_train.DURATIONS, "checkpoint": (wd / "checkpoint.pt").exists(),
+            "trained_profile": trained, "runtime": meanvc.runtime_ready(),
+            "status": rvc_train.manager().status()})
+
+    def rvc_train_start(self, profile_id: str, minutes: float = 120, extend: bool = False) -> dict:
+        from .ai import rvc_train
+        try:
+            prof = self._profiles.get(profile_id)
+        except ProfileError as exc:
+            return self._fail(str(exc))
+        gpu = self._settings.get("ai", "rvc_device") == "gpu"
+        try:
+            rvc_train.manager().start(prof, self._profiles.path(profile_id), float(minutes),
+                                      lambda res: self._train_done(prof, res), prefer_gpu=gpu, extend=bool(extend))
+        except rvc_train.TrainError as exc:
+            return self._fail(str(exc))
+        return self._ok(status=rvc_train.manager().status())
+
+    def rvc_train_stop(self) -> dict:
+        from .ai import rvc_train
+        rvc_train.manager().stop()
+        return self._ok(status=rvc_train.manager().status())
+
+    def rvc_train_status(self) -> dict:
+        from .ai import rvc_train
+        return self._ok(status=rvc_train.manager().status())
+
+    def _train_done(self, src: dict, res: dict) -> dict:
+        """Crea (o actualiza, si se siguió entrenando) el perfil RVC con la voz entrenada."""
+        import shutil
+        from .ai import rvc
+        wd = Path(res["work_dir"])
+        link = wd / "profile.json"
+        prof = None
+        if link.exists():
+            try:
+                prof = self._profiles.get(json.loads(link.read_text(encoding="utf-8"))["profile_id"])
+            except Exception:  # noqa: BLE001
+                prof = None
+        onnx = Path(res["path"])
+        model = rvc.RemoteRVC(onnx, "file", False)            # comprueba que el modelo carga y convierte
+        sr = model.sr
+        model.close()
+        if prof is None:
+            prof = self._profiles.create(f"{src['name']} (fiel)", "rvc",
+                                         f"Voz entrenada en VoiceLab a partir de «{src['name']}».", src.get("folder", ""), {})
+        d = self._profiles.path(prof["id"]) / "model"
+        d.mkdir(exist_ok=True)
+        tmp = d / "model.onnx.tmp"
+        shutil.copyfile(onnx, tmp)
+        os.replace(tmp, d / "model.onnx")
+        info = {"file": "model.onnx", "sr": sr, "style": "webui", "source": "VoiceLab", "trained_from": src["id"],
+                "steps": res.get("step"), "data_minutes": (res.get("dataset") or {}).get("minutes"),
+                "f0_median": (res.get("dataset") or {}).get("f0_median")}
+        (d / "rvc.json").write_text(json.dumps(info), encoding="utf-8")
+        link.write_text(json.dumps({"profile_id": prof["id"]}), encoding="utf-8")
+        prof = self._profiles.update(prof["id"], {"model": {"kind": "rvc", "sr": sr, "source": "entrenada en VoiceLab",
+                                                            "steps": res.get("step")}})
+        if self._settings.get("voice", "profile_id") == prof["id"] and self._engine.running:
+            self._ai_job(prof)                                # ya estaba en uso: carga la versión nueva
+        return prof
 
     # -------------------------------------------- voz por IA en el modulador
     def _live_kind(self, prof: dict | None) -> str | None:
