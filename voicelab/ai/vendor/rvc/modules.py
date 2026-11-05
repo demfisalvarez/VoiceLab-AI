@@ -3,7 +3,7 @@ import math
 from typing import Optional, Tuple
 
 import numpy as np
-import scipy
+
 import torch
 from torch import nn
 from torch.nn import AvgPool1d, Conv1d, Conv2d, ConvTranspose1d
