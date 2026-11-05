@@ -48,7 +48,7 @@ class Obj:
             progress(0.5)
         return np.ones(10, np.float32)
 
-    def convert16(self, x16, semitones=0.0):
+    def convert16(self, x16, semitones=0.0, keep=0):
         return np.asarray(x16, np.float32) * 2
 
 

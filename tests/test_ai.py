@@ -123,7 +123,7 @@ def test_coarse_f0_range():
     assert c[0] == 1 and c[1] == 1 and 1 < c[2] < 255 and c[3] == 255 and c[4] == 255
 
 
-def fake_rvc(style="webui", model_sr=40000):
+def fake_rvc(style="webui", model_sr=40000, skip=False):
     def vec(feed):
         n = feed[list(feed)[0]].shape[-1] // 320
         return [np.zeros((1, n, 768), np.float32)]
@@ -132,11 +132,12 @@ def fake_rvc(style="webui", model_sr=40000):
         return [np.zeros((1, feed["mel"].shape[-1], 360), np.float32) + np.eye(360)[150] * 0.9]
 
     def synth(feed):
-        f0 = feed["pitchf"][0]
+        f0 = feed["pitchf"][0][int(feed.get("skip_head", [0])[0]):]
         n = f0.shape[0] * model_sr // 100
         hz = float(np.mean(f0)) or 200.0
         return [(0.5 * np.sin(2 * np.pi * hz * np.arange(n) / model_sr))[None, None].astype(np.float32)]
     names = ("phone", "phone_lengths", "pitch", "pitchf", "ds", "rnd") if style == "webui" else ("feats", "p_len", "pitch", "pitchf", "sid")
+    names += ("skip_head",) if skip else ()
     return rvc.RVCModel(None, sessions={"vec": Sess(vec), "rmvpe": Sess(rm, ("mel",)), "synth": Sess(synth, names)})
 
 
@@ -156,7 +157,7 @@ def test_rvc_rejects_non_rvc_onnx():
 
 def test_realtime_rvc_streams_without_clicks():
     m = fake_rvc("webui", 40000)
-    proc = rvc.RealtimeRVC(m, SR, block_s=0.2, context_s=0.4, fade_s=0.03)
+    proc = rvc.RealtimeRVC(m, SR, block_s=0.2, context_s=0.4, fade_s=0.03, adaptive=False)
     t = np.arange(SR * 4) / SR
     x = (0.3 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
     outs = []
@@ -171,7 +172,33 @@ def test_realtime_rvc_streams_without_clicks():
     step = np.max(np.abs(np.diff(voiced)))
     max_slope = 0.5 * 2 * np.pi * 400 / SR                 # tono del modelo simulado (≈ 340–400 Hz)
     assert step < max_slope * 3, step                      # sin saltos bruscos en los empalmes
-    assert proc.latency_samples >= int(0.23 * SR)
+    assert int(0.23 * SR) <= proc.latency_samples <= int(0.36 * SR)
+    assert proc.underruns <= 1
+
+
+def test_realtime_rvc_low_latency_and_skip_head(monkeypatch):
+    m = fake_rvc("webui", 40000, skip=True)
+    seen = []
+    orig = m.synth.run
+
+    def run(out, feed):
+        seen.append(int(feed.get("skip_head", [-1])[0]))
+        return orig(out, feed)
+    monkeypatch.setattr(m.synth, "run", run)
+    assert m.can_skip
+    proc = rvc.RealtimeRVC(m, SR)                     # bloque de 0,1 s
+    t = np.arange(SR * 3) / SR
+    x = (0.3 * np.sin(2 * np.pi * 220 * t) * ((t % 0.8) < 0.5)).astype(np.float32)
+    y = []
+    t0 = time.perf_counter()
+    for k, i in enumerate(range(0, x.shape[0], 256)):
+        y.append(proc.process(x[i:i + 256]))
+        wait = t0 + (k + 1) * 256 / SR - time.perf_counter()
+        if wait > 0:
+            time.sleep(wait)
+    proc.close()
+    assert proc.latency_samples / SR < 0.2                # retraso total por debajo de 200 ms
+    assert seen and max(seen) > 0                         # el decodificador se salta el contexto
 
 
 def test_update_check(tmp_path, monkeypatch):

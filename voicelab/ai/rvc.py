@@ -138,10 +138,21 @@ class RVCModel:
         sr = int(round(np.asarray(out).size / n * 100))
         return min((32000, 40000, 44100, 48000), key=lambda r: abs(r - sr))
 
-    def convert16(self, x16: np.ndarray, semitones: float = 0.0) -> np.ndarray:
+    @property
+    def can_skip(self) -> bool:
+        """Modelos entrenados con VoiceLab: el decodificador puede saltarse el contexto."""
+        return "skip_head" in self.names
+
+    def convert16(self, x16: np.ndarray, semitones: float = 0.0, keep: int = 0) -> np.ndarray:
+        """Convierte audio a 16 kHz. ``keep`` (tramas de 10 ms): si el modelo lo admite, solo se
+        sintetizan las últimas ``keep`` tramas (en directo, el resto es contexto)."""
         feats = self.features(x16)
         f0 = self.rmvpe.f0(x16) * (2 ** (semitones / 12))
-        out = self.synth.run(None, self._feed(feats, f0))[0]
+        feed = self._feed(feats, f0)
+        if self.can_skip:
+            n = int(feed["phone_lengths"][0])
+            feed["skip_head"] = np.array([max(0, n - keep) if keep else 0], np.int64)
+        out = self.synth.run(None, feed)[0]
         return np.asarray(out, dtype=np.float32).reshape(-1)
 
     def convert(self, audio: np.ndarray, sr: int, semitones: float = 0.0, progress=None) -> np.ndarray:
@@ -175,7 +186,8 @@ def open_model(target: str, kind: str = "profile", prefer_gpu: bool = True, stag
     m = load_profile_model(Path(target), prefer_gpu, stage) if kind == "profile" else \
         RVCModel(Path(target), prefer_gpu=prefer_gpu, stage=stage)
     provs = m.synth.get_providers() if hasattr(m.synth, "get_providers") else []
-    m.info = {"sr": m.sr, "style": m.style, "device": "gpu" if provs and provs[0] != "CPUExecutionProvider" else "cpu"}
+    m.info = {"sr": m.sr, "style": m.style, "can_skip": m.can_skip,
+              "device": "gpu" if provs and provs[0] != "CPUExecutionProvider" else "cpu"}
     return m
 
 
@@ -205,9 +217,10 @@ class RemoteRVC:
                 raise RVCError(str(exc2)) from None
         info = self.r.info or {}
         self.sr, self.style, self.device = info.get("sr", 40000), info.get("style", "webui"), info.get("device", "cpu")
+        self.can_skip = bool(info.get("can_skip"))
 
-    def convert16(self, x16: np.ndarray, semitones: float = 0.0) -> np.ndarray:
-        return self.r.call("convert16", x16, semitones, timeout=30)
+    def convert16(self, x16: np.ndarray, semitones: float = 0.0, keep: int = 0) -> np.ndarray:
+        return self.r.call("convert16", x16, semitones, keep, timeout=30)
 
     def convert(self, audio: np.ndarray, sr: int, semitones: float = 0.0, progress=None) -> np.ndarray:
         return self.r.call("convert", audio, sr, semitones, progress=progress, timeout=180)
@@ -220,34 +233,51 @@ class RemoteRVC:
 class RealtimeRVC:
     """Procesador para el motor de audio: convierte por bloques en un hilo aparte.
 
-    El hilo de audio solo copia muestras; la inferencia corre en otro hilo
-    (ONNX Runtime libera el GIL). Cada bloque se convierte con contexto previo
-    y se empalma con fundido alineado (SOLA) para evitar chasquidos.
+    El hilo de audio solo copia muestras; la inferencia corre en otro hilo (ONNX
+    Runtime suelta el GIL). Cada bloque se convierte con un poco de contexto previo
+    y se empalma con fundido alineado (SOLA). Para bajar el retraso:
+
+    * bloques cortos (empieza en 0,1 s) que se agrandan solos si el equipo no llega;
+    * con modelos entrenados en la app, el decodificador solo sintetiza el final;
+    * cola de salida adaptativa (``LiveOutput``): arranca en el retraso justo.
     """
 
-    def __init__(self, model: RVCModel, sr: int = 48000, block_s: float = 0.30, context_s: float = 0.8,
-                 fade_s: float = 0.04, semitones: float = 0.0):
+    kind = "rvc"
+    MIN_BLOCK_S, MAX_BLOCK_S = 0.06, 0.3
+    WINDOW_S = 3.0
+    STATS_S = 30.0
+
+    def __init__(self, model: RVCModel, sr: int = 48000, block_s: float = 0.10, context_s: float = 0.4,
+                 fade_s: float = 0.02, semitones: float = 0.0, adaptive: bool = True):
         from ..audio.ringbuffer import RingBuffer
+        from .livebuf import LiveOutput
         self.m, self.sr = model, sr
         self.block, self.context, self.fade = int(block_s * sr), int(context_s * sr), int(fade_s * sr)
+        self.adaptive = adaptive
         self.semitones = semitones
         self.inq = RingBuffer(sr * 10)
-        self.outq = RingBuffer(sr * 10)
+        self.out = LiveOutput(sr, self._need, int(self.MAX_BLOCK_S * sr), window_s=self.WINDOW_S)
         self.hist = np.zeros(self.context + self.block + self.fade, np.float32)
         self.prev_tail: np.ndarray | None = None
-        self.outq.write(np.zeros(self.block + self.fade, np.float32))     # colchón inicial
         self.infer_ms = 0.0
-        self.underruns = 0
         self.error: str | None = None
+        self._slow = 0
         self._ev = threading.Event()
         self._stop = False
-        self._tmp = np.zeros(sr, np.float32)
         self._t = threading.Thread(target=self._worker, name="rvc-tiempo-real", daemon=True)
         self._t.start()
 
+    # -- información
+    def _need(self) -> float:
+        """Bloque + cola del empalme (como mucho 2 fundidos) + cálculo."""
+        return self.block + 2 * self.fade + 1.15 * self.infer_ms / 1000 * self.sr
+
     @property
     def latency_samples(self) -> int:
-        return self.block + self.fade + int(self.infer_ms / 1000 * self.sr)
+        return self.out.latency_samples
+
+    underruns = property(lambda self: self.out.underruns)
+    dropped = property(lambda self: self.out.dropped)
 
     def close(self) -> None:
         self._stop = True
@@ -255,33 +285,49 @@ class RealtimeRVC:
         if hasattr(self.m, "close"):                      # modelo en proceso aparte
             threading.Thread(target=self.m.close, daemon=True).start()
 
-    def process(self, x: np.ndarray) -> np.ndarray:          # hilo de audio
+    # -- hilo de audio
+    def process(self, x: np.ndarray) -> np.ndarray:
         self.inq.write(x)
+        self.out.in_total += x.shape[0]
         if self.inq.available() >= self.block:
             self._ev.set()
-        n = x.shape[0]
-        if self._tmp.shape[0] < n:
-            self._tmp = np.zeros(n * 2, np.float32)
-        got = self.outq.read_into(self._tmp, n)
-        out = self._tmp[:n].copy()
-        if got < n:
-            out[got:] = 0.0
-            self.underruns += 1
-        return out
+        return self.out.read(x.shape[0])
+
+    # -- hilo de conversión
+    def _keep_frames(self) -> int:
+        """Tramas (10 ms) que hay que sintetizar: bloque + 2 fundidos + margen para el decodificador."""
+        return int(np.ceil((self.block + 2 * self.fade) / self.sr * 100)) + 8
+
+    def _grow(self, ms: float) -> None:
+        """Si el cálculo no cabe con holgura en el bloque, bloque más grande (más retraso, sin cortes)."""
+        if not self.adaptive:
+            return
+        self._slow = self._slow + 1 if ms > 0.75 * self.block / self.sr * 1000 else 0
+        if self._slow >= 3 and self.block < self.MAX_BLOCK_S * self.sr:
+            new = min(int(self.MAX_BLOCK_S * self.sr), int(ms / 0.6 / 1000 * self.sr / 480 + 1) * 480)
+            log.info("RVC en directo: el cálculo (%.0f ms) no cabe en bloques de %d ms; se pasa a %d ms",
+                     ms, self.block * 1000 // self.sr, new * 1000 // self.sr)
+            self.block, self._slow = new, 0
+            self.hist = np.concatenate([np.zeros(max(0, self.context + self.block + self.fade - self.hist.shape[0]),
+                                                 np.float32), self.hist])[-(self.context + self.block + self.fade):]
 
     def _worker(self) -> None:
         import time
-        buf = np.zeros(self.block, np.float32)
+        buf = np.zeros(int(self.MAX_BLOCK_S * self.sr), np.float32)
+        last_log, under0 = time.monotonic(), 0
         while not self._stop:
             self._ev.wait(0.5)
             self._ev.clear()
             while not self._stop and self.inq.available() >= self.block:
-                self.inq.read_into(buf, self.block)
-                self.hist = np.concatenate([self.hist[self.block:], buf])
+                b = self.block
+                if self.inq.available() > 4 * b:          # va por detrás: se descarta lo viejo
+                    self.out.dropped += self.inq.skip(self.inq.available() - b)
+                self.inq.read_into(buf, b)
+                self.hist = np.concatenate([self.hist[b:], buf[:b]])
                 t0 = time.perf_counter()
                 try:
                     x16 = resample(self.hist, self.sr, SR16)
-                    y = resample(self.m.convert16(x16, self.semitones), self.m.sr, self.sr)
+                    y = resample(self.m.convert16(x16, self.semitones, self._keep_frames()), self.m.sr, self.sr)
                     self._fails = 0
                 except Exception as exc:  # noqa: BLE001
                     self._fails = getattr(self, "_fails", 0) + 1
@@ -290,15 +336,23 @@ class RealtimeRVC:
                         self.error = str(exc)
                         self._stop = True
                         return
-                    y = np.zeros_like(self.hist)
-                self.infer_ms = 0.8 * self.infer_ms + 0.2 * (time.perf_counter() - t0) * 1000
-                y = np.pad(y, (max(0, self.hist.shape[0] - y.shape[0]), 0))[-self.hist.shape[0]:]
-                self.outq.write(self._splice(y))
+                    y = np.zeros(b + 2 * self.fade, np.float32)
+                ms = (time.perf_counter() - t0) * 1000
+                self.infer_ms = ms if self.infer_ms == 0 else 0.8 * self.infer_ms + 0.2 * ms
+                need = b + 2 * self.fade
+                y = np.pad(y, (max(0, need - y.shape[0]), 0))[-need:]
+                self.out.write(self._splice(y, b))
+                self._grow(ms)
+            if time.monotonic() - last_log >= self.STATS_S and not self._stop:
+                last_log = time.monotonic()
+                log.info("RVC en directo: retraso %d ms, bloque %d ms, cálculo %.0f ms, huecos %d, margen %d ms",
+                         self.latency_samples * 1000 // self.sr, self.block * 1000 // self.sr, self.infer_ms,
+                         self.underruns - under0, self.out.margin * 1000 // self.sr)
+                under0 = self.underruns
 
-    def _splice(self, y: np.ndarray) -> np.ndarray:
-        """Devuelve ``block`` muestras nuevas empalmadas con la cola anterior."""
-        f, b = self.fade, self.block
-        seg = y[-(b + 2 * f):]                         # zona de búsqueda + bloque + cola
+    def _splice(self, seg: np.ndarray, b: int) -> np.ndarray:
+        """Devuelve ``b`` muestras nuevas empalmadas con la cola anterior (``seg``: b + 2 fundidos)."""
+        f = self.fade
         if self.prev_tail is None:
             self.prev_tail = seg[-f:].copy()
             return seg[f:f + b].astype(np.float32)

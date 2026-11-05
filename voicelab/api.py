@@ -799,7 +799,7 @@ class AIApiMixin:
             model = rvc.RemoteRVC(pdir, "profile", self._settings.get("ai", "rvc_device") == "gpu", on_stage)
             if model.fallback:
                 self._settings.update({"ai": {"rvc_device": "cpu"}})
-            proc = rvc.RealtimeRVC(model, sr, v["rvc_block"], semitones=v["rvc_pitch"])
+            proc = rvc.RealtimeRVC(model, sr, semitones=v["rvc_pitch"])     # bloque automático (desde 0,1 s)
         else:
             from .ai import meanvc
             variant = self._settings.get("ai", "meanvc_variant")
