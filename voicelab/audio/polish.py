@@ -134,10 +134,11 @@ class PolishedAI:
     Mantiene la interfaz del procesador original (atributos y métodos se reenvían).
     """
 
-    def __init__(self, inner, sr: int, clean_input: bool = True, polish: bool = True, air: bool = False):
+    def __init__(self, inner, sr: int, clean_input: bool = True, polish: bool = True, air: bool = False,
+                 noise_reduction: float = 30.0):
         self.inner = inner
         self.sr = sr
-        self.clean = InputCleaner(sr) if clean_input else None
+        self.clean = InputCleaner(sr, noise_reduction) if clean_input else None
         self.post = Polish(sr, air=air) if polish else None
 
     def __getattr__(self, name):

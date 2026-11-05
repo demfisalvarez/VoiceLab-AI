@@ -958,8 +958,11 @@ class AIApiMixin:
         v = self._settings.snapshot()["voice"]
         if not (v["ai_polish"] or v["ai_clean_input"]):
             return proc
-        hd = getattr(proc, "out_sr", 16000) >= 32000 or getattr(proc, "kind", "") == "rvc"
-        return PolishedAI(proc, sr, clean_input=v["ai_clean_input"], polish=v["ai_polish"], air=hd)
+        rvc_kind = getattr(proc, "kind", "") == "rvc"
+        hd = getattr(proc, "out_sr", 16000) >= 32000 or rvc_kind
+        # RVC: solo paso alto (su extractor aguanta bien el ruido) y así no suma los 21 ms de la reducción de ruido.
+        return PolishedAI(proc, sr, clean_input=v["ai_clean_input"], polish=v["ai_polish"], air=hd,
+                          noise_reduction=0.0 if rvc_kind else 30.0)
 
     def _ai_job(self, prof: dict) -> str:
         self._ws()
