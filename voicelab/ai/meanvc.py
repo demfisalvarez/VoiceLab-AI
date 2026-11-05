@@ -41,7 +41,10 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 MODEL_KEY = "meanvc2"
 SR16 = proto.SR
 CHUNK16 = proto.CHUNK
-VARIANTS = {"120ms": "Calidad (bloques de 120 ms)", "40ms": "Baja latencia (bloques de 40 ms)"}
+VARIANTS = {"40ms": "Baja latencia (≈ 0,25 s · más CPU)", "120ms": "Calidad (voz más parecida · ≈ 0,45 s)"}
+# Medido en Windows con los modelos reales: el modo de baja latencia gasta ~3 veces más CPU.
+# Se elige solo si este PC lo mueve con holgura (cálculo < 60 % del tiempo real).
+LOW_LATENCY_MAX_RTF = 0.6
 _ABOVE_NORMAL = 0x00008000 if sys.platform == "win32" else 0   # prioridad alta (sin llegar a tiempo real)
 
 
@@ -141,12 +144,19 @@ def installed() -> bool:
     return runtime_ready() and models.installed(MODEL_KEY) and bench() is not None
 
 
-def bench() -> dict | None:
-    f = weights_dir() / "bench.json"
+def bench(variant: str = "120ms") -> dict | None:
+    """Velocidad medida al instalar (``bench.json`` es el modo «120ms», ``bench_40ms.json`` el otro)."""
+    f = weights_dir() / ("bench.json" if variant == "120ms" else f"bench_{variant}.json")
     try:
         return json.loads(f.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+
+
+def recommended_variant() -> str:
+    """Baja latencia si este PC la mueve con holgura; si no (o no se midió), calidad."""
+    b = bench("40ms") or {}
+    return "40ms" if b.get("rtf", 9.0) < LOW_LATENCY_MAX_RTF else "120ms"
 
 
 def _bundled_python() -> Path | None:
@@ -180,7 +190,8 @@ def status() -> dict:
             "name": m["name"], "license": m["license"], "repo": m["repo"],
             "download_gb": round(m["approx_gb"] + RUNTIME_DOWNLOAD_GB, 1),
             "disk_gb": round(m["approx_gb"] + RUNTIME_DISK_GB, 1),
-            "variants": VARIANTS, "bench": bench(), "bench_hd": bench_hd()}
+            "variants": VARIANTS, "bench": bench(), "bench_40ms": bench("40ms"), "bench_hd": bench_hd(),
+            "recommended": recommended_variant()}
 
 
 HD_KEY = "apbwe"
@@ -324,6 +335,12 @@ def install(progress) -> dict:
     progress(0.9)
     res = selftest("120ms")
     (weights_dir() / "bench.json").write_text(json.dumps(res), encoding="utf-8")
+    try:                                     # el modo de baja latencia gasta más: se mide aparte
+        low = selftest("40ms")
+        (weights_dir() / "bench_40ms.json").write_text(json.dumps(low), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        low = None
+        log.warning("No se pudo medir el modo de baja latencia: %s", exc)
     hd_error = None
     try:                                     # alta definición: opcional, no impide usar la voz en directo
         install_hd(lambda p: progress(0.92 + p * 0.08))
@@ -331,7 +348,8 @@ def install(progress) -> dict:
         hd_error = str(exc)
         log.warning("Alta definición no disponible: %s", exc)
     progress(1.0)
-    return {"installed": True, "bench": res, "hd": hd_installed(), "hd_error": hd_error, "bench_hd": bench_hd()}
+    return {"installed": True, "bench": res, "bench_40ms": low, "variant": recommended_variant(),
+            "hd": hd_installed(), "hd_error": hd_error, "bench_hd": bench_hd()}
 
 
 def install_hd(progress) -> dict:
@@ -342,6 +360,15 @@ def install_hd(progress) -> dict:
     (models.model_dir(HD_KEY) / "bench.json").write_text(json.dumps(res), encoding="utf-8")
     progress(1.0)
     return {"hd": True, "bench_hd": res}
+
+
+def hd_allowed(variant: str) -> bool:
+    """La alta definición solo en modo «Calidad» y si la CPU la aguanta.
+
+    Medido en Windows: con bloques de 80 ms (baja latencia) la HD cuesta más del doble y no
+    mejora la voz (DNSMOS 3,19 → 2,96); con «Calidad» apenas cambia (3,24 → 3,28).
+    """
+    return variant == "120ms" and hd_installed() and (bench_hd() or {}).get("rtf", 1.0) < 0.85
 
 
 def bench_hd() -> dict | None:

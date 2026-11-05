@@ -107,7 +107,7 @@ SCHEMA: dict[str, dict[str, tuple[Any, Callable[[Any], Any]]]] = {
         "tts_model": ("chatterbox-v2", _choice(("chatterbox-v2",))),
         "tts_language": ("es", _opt_str),
         "meanvc_variant": ("120ms", _choice(("120ms", "40ms"))),
-        "meanvc_hd": (True, _bool),                          # salida a 48 kHz con AP-BWE (si está descargado)
+        "meanvc_hd": (False, _bool),                          # salida a 48 kHz con AP-BWE (si está descargado)
         "tts_device": ("cpu", _choice(("cpu", "gpu"))),     # la CPU es lo fiable; la GPU, opcional
         "rvc_device": ("gpu", _choice(("cpu", "gpu"))),
     },

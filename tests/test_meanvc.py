@@ -499,7 +499,19 @@ def test_install_downloads_then_benchmarks(monkeypatch):
     res = meanvc.install(prog.append)
     assert res["installed"] and res["bench"]["chunk_ms"] == 160.0 and res["bench"]["torch"] == "simulado"
     assert meanvc.bench() == res["bench"] and meanvc.installed()
+    assert meanvc.bench("40ms") == res["bench_40ms"] and res["bench_40ms"]["rtf"] < 0.6
+    assert res["variant"] == meanvc.recommended_variant() == "40ms"     # CPU de sobra: baja latencia
+    (meanvc.weights_dir() / "bench_40ms.json").write_text(json.dumps({"rtf": 0.8}))
+    assert meanvc.recommended_variant() == "120ms"                       # CPU justa: calidad
     assert prog == sorted(prog) and prog[-1] == 1.0
+
+
+def test_hd_only_in_quality_mode_and_if_fast(monkeypatch):
+    monkeypatch.setattr(meanvc, "hd_installed", lambda: True)
+    monkeypatch.setattr(meanvc, "bench_hd", lambda: {"rtf": 0.5})
+    assert meanvc.hd_allowed("120ms") and not meanvc.hd_allowed("40ms")
+    monkeypatch.setattr(meanvc, "bench_hd", lambda: {"rtf": 0.9})
+    assert not meanvc.hd_allowed("120ms")
 
 
 def test_frozen_build_uses_bundled_uv_and_managed_python(tmp_path, monkeypatch):

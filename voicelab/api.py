@@ -803,9 +803,8 @@ class AIApiMixin:
         else:
             from .ai import meanvc
             variant = self._settings.get("ai", "meanvc_variant")
-            bh = meanvc.bench_hd() or {}
-            # La alta definición solo si este PC la aguanta (medido al instalar): si no, entrecortaría.
-            hd = bool(self._settings.get("ai", "meanvc_hd")) and meanvc.hd_installed() and bh.get("rtf", 1.0) < 0.85
+            # Alta definición: solo en «Calidad» y si este PC la aguanta (medido al instalar).
+            hd = bool(self._settings.get("ai", "meanvc_hd")) and meanvc.hd_allowed(variant)
             cur = self._engine.ai
             inner = getattr(cur, "inner", cur)
             if (isinstance(inner, meanvc.RealtimeMeanVC) and inner.variant == variant and inner.sr == sr
@@ -914,7 +913,13 @@ class AIApiMixin:
     # ------------------------------------------ voz instantánea en directo
     def ai_install_live(self) -> dict:
         from .ai import meanvc
-        return self._job("Instalando la voz instantánea en directo", meanvc.install)
+
+        def work(progress):
+            res = meanvc.install(progress)
+            # El modo que mejor va en este PC: baja latencia si la CPU sobra, si no calidad.
+            self._settings.update({"ai": {"meanvc_variant": res.get("variant") or "120ms"}})
+            return res
+        return self._job("Instalando la voz instantánea en directo", work)
 
     def ai_install_hd(self) -> dict:
         from .ai import meanvc

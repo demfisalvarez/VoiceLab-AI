@@ -217,9 +217,14 @@
         '<div class="fx-row" style="margin-top:10px"><div class="field-label">Modo</div><select id="live-variant">' +
         Object.entries(live.variants).map(([k, v]) => '<option value="' + k + '"' + (k === set.ai.meanvc_variant ? ' selected' : '') + '>' + VL.esc(v) + '</option>').join('') +
         '</select></div>' + qualityHTML() +
-        (live.hd ? '<label class="checkbox" style="margin-top:8px" title="AP-BWE reconstruye los agudos (de 16 kHz a 48 kHz): voz más nítida y con más aire. Usa algo más de CPU y añade ~25 ms."><input type="checkbox" id="q-hd"' + (set.ai.meanvc_hd ? ' checked' : '') + '><span>Alta definición 48 kHz</span></label>' +
+        (set.ai.meanvc_variant !== '120ms'
+          ? ''
+          : live.hd ? '<label class="checkbox" style="margin-top:8px" title="AP-BWE reconstruye los agudos (de 16 kHz a 48 kHz). Usa bastante más CPU y añade ~25 ms; la mejora es pequeña."><input type="checkbox" id="q-hd"' + (set.ai.meanvc_hd ? ' checked' : '') + '><span>Alta definición 48 kHz</span></label>' +
           (live.bench_hd ? '<div class="small muted">' + VL.esc(benchText(live.bench_hd)) + (live.bench_hd.rtf >= 0.85 ? ' Se usa la calidad normal para no entrecortar.' : '') + '</div>' : '')
-          : '<div class="small muted" style="margin-top:8px">Alta definición 48 kHz (más nitidez): <button class="link" id="q-hd-get">descargar ' + live.hd_mb + ' MB</button></div>') +
+          : '<div class="small muted" style="margin-top:8px">Alta definición 48 kHz (algo más de nitidez, más CPU): <button class="link" id="q-hd-get">descargar ' + live.hd_mb + ' MB</button></div>') +
+        '<div class="notice info" style="margin-top:10px">' + iconHTML('info') + '<div><b>¿Suena robótica en Discord?</b> En Discord → Ajustes → Voz y vídeo, con «CABLE Output» como micrófono: ' +
+          'pon <b>Supresión de ruido</b> en «Ninguna» y desactiva <b>Cancelación de eco</b>, <b>Control automático de ganancia</b> y el <b>procesamiento de voz avanzado</b>. ' +
+          'Esos filtros están pensados para voces reales y deforman la voz convertida.</div></div>' +
         '<div id="live-status" style="margin-top:10px"></div>' +
         '<div class="field-hint" style="margin-top:8px">Conversión sin entrenamiento a partir de la referencia del perfil. Se parece menos que una voz RVC entrenada y el modelo se entrenó sobre todo con inglés y chino: en español la pronunciación puede sonar menos natural. La primera vez con cada voz tarda unos segundos más (calcula su huella).</div>';
       $('#live-on').onchange = async (e) => VL.applyResponse(await VL.call('update_settings', { voice: { instant_live: e.target.checked } }));
@@ -258,8 +263,11 @@
     } else if (st) {
       html = '<div class="notice ok">' + iconHTML('check') + '<div><b>' + (instant ? 'Voz instantánea en directo activa.' : 'Conversión por IA activa.') + '</b> ' +
         'Cálculo ' + st.infer_ms + ' ms por bloque de ' + st.block_ms + ' ms · latencia añadida ≈ ' + Math.round(st.latency_ms) + ' ms' +
-        (st.underruns ? ' · ' + st.underruns + ' cortes' : '') +
-        (st.dropped_ms ? ' · la CPU no da abasto (' + st.dropped_ms + ' ms descartados)' : '') + '</div></div>';
+        (st.underruns ? ' · ' + st.underruns + ' cortes' : '') + '</div></div>' +
+        ((st.dropped_ms || (st.block_ms && st.infer_ms > 0.85 * st.block_ms))
+          ? '<div class="notice warn" style="margin-top:8px">' + iconHTML('alert') + '<div><b>El procesador no llega a tiempo</b>' + (st.dropped_ms ? ' (' + st.dropped_ms + ' ms descartados)' : '') +
+            ': la voz se entrecorta y suena robótica. ' + (VL.S.settings.ai.meanvc_variant === '40ms' ? 'Cambia el modo a <b>«Calidad»</b> (gasta 3 veces menos) o cierra programas pesados.' : 'Desactiva la alta definición o cierra programas pesados.') + '</div></div>'
+          : '');
     } else {
       html = '<div class="notice info">' + iconHTML('info') + '<div>' + (status.running ? 'Cargando la voz…' : 'La conversión se activa al encender el modulador.') + '</div></div>';
     }
