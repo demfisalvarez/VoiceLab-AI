@@ -332,6 +332,8 @@ class TrainingManager:
         if not meanvc.runtime_ready():
             self._set(phase="Instalando PyTorch para la CPU (una vez, ~250 MB)…", progress=0.01)
             meanvc.install_runtime(lambda p: self._set(progress=0.01 + 0.03 * p))
+        self._set(phase="Comprobando el entorno de PyTorch…")
+        meanvc.ensure_extras(meanvc.TRAIN_EXTRAS)
         for key, label in (("rvc-base", "la base de conversión RVC"), (PRETRAIN_KEY, "los modelos preentrenados")):
             if not models.installed(key):
                 self._set(phase=f"Descargando {label}…")

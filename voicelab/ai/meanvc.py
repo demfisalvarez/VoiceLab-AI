@@ -54,7 +54,11 @@ def packages(version: tuple = sys.version_info[:2]) -> list[str]:
         base = ["torch==2.6.0", "torchaudio==2.6.0", "numpy>=2.1,<2.3"]
     else:
         base = ["torch==2.5.1", "torchaudio==2.5.1", "numpy>=1.26,<2.1"]
-    return base + ["einops==0.8.0", "x-transformers==2.2.11", "safetensors>=0.4"]
+    return base + ["einops==0.8.0", "x-transformers==2.2.11", "safetensors>=0.4"] + TRAIN_EXTRAS
+
+
+# Para «Entrenar voz fiel»: el exportador ONNX de PyTorch necesita el paquete «onnx».
+TRAIN_EXTRAS = ["onnx==1.17.0"]
 
 
 RUNTIME_DOWNLOAD_GB = 0.25
@@ -231,6 +235,30 @@ def _run(cmd: list[str], what: str, env: dict | None = None) -> None:
         tail = (r.stderr or r.stdout or "")[-1200:]
         log.error("%s falló:\n%s", what, tail)
         raise RuntimeError(f"{what} falló:\n{tail}")
+
+
+def ensure_extras(extras: list[str], progress=None) -> None:
+    """Añade paquetes a un entorno ya instalado (versiones anteriores no los tenían)."""
+    d = runtime_dir()
+    f = d / ".complete"
+    try:
+        have = json.loads(f.read_text(encoding="utf-8")).get("packages", [])
+    except (OSError, ValueError):
+        have = []
+    missing = [p for p in extras if p not in have]
+    if not missing:
+        return
+    uv = _uv()
+    if uv is not None:
+        env = dict(os.environ, UV_PYTHON_DOWNLOADS="never") if _frozen() else None
+        _run([str(uv), "pip", "install", "--no-config", "--no-cache", "--python", str(runtime_python()), *missing],
+             "Completar el entorno de PyTorch", env)
+    else:
+        _run([str(runtime_python()), "-m", "pip", "install", "--disable-pip-version-check", *missing],
+             "Completar el entorno de PyTorch")
+    f.write_text(json.dumps({"packages": have + missing}), encoding="utf-8")
+    if progress:
+        progress(1.0)
 
 
 def install_runtime(progress) -> None:

@@ -486,6 +486,24 @@ def test_install_runtime_uses_private_uv_and_cpu_torch(tmp_path, monkeypatch):
     assert meanvc.runtime_ready()
 
 
+def test_ensure_extras_completes_an_old_runtime(tmp_path, monkeypatch):
+    root = tmp_path / "VoiceLab AI"
+    (root / "bin").mkdir(parents=True)
+    (root / "bin" / "uv.exe").write_text("")
+    monkeypatch.setattr(meanvc, "_app_root", lambda: root)
+    monkeypatch.delenv("VOICELAB_VC_RUNTIME", raising=False)
+    meanvc.runtime_dir().mkdir(parents=True)
+    old = ["torch==2.5.1", "torchaudio==2.5.1"]                     # entorno de una versión anterior
+    (meanvc.runtime_dir() / ".complete").write_text(json.dumps({"packages": old}))
+    cmds = []
+    monkeypatch.setattr(meanvc, "_run", lambda cmd, what, env=None: cmds.append(cmd))
+    meanvc.ensure_extras(meanvc.TRAIN_EXTRAS)
+    assert len(cmds) == 1 and cmds[0][1:3] == ["pip", "install"] and cmds[0][-1] == "onnx==1.17.0"
+    meanvc.ensure_extras(meanvc.TRAIN_EXTRAS)                        # ya está: no se repite
+    assert len(cmds) == 1
+    assert "onnx==1.17.0" in meanvc.packages()                       # y las instalaciones nuevas lo traen
+
+
 def test_install_downloads_then_benchmarks(monkeypatch):
     def fake_models_install(key, progress):
         d = models.model_dir(key)

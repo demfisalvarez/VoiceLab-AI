@@ -62,6 +62,7 @@ def main() -> int:
     t0 = time.perf_counter()
     if not meanvc.runtime_ready():
         meanvc.install_runtime(lambda p: None)
+    meanvc.ensure_extras(meanvc.TRAIN_EXTRAS)
     for key in ("rvc-base", rvc_train.PRETRAIN_KEY):
         models.install(key, lambda p: None)
     REPORT["instalacion_s"] = round(time.perf_counter() - t0, 1)

@@ -1,4 +1,4 @@
-# VoiceLab AI · v0.9.0
+# VoiceLab AI · v0.10.0
 
 Estudio de voz para Windows 10/11: modulador en tiempo real con micrófono virtual, efectos, clonación de voz con IA local, conversión de voz en directo (RVC y voz instantánea sin entrenar), texto a voz, editor de audio y biblioteca de perfiles. Sin suscripciones: todo se ejecuta en tu equipo.
 
@@ -12,7 +12,9 @@ El instalador lo genera GitHub Actions en Windows real (`.github/workflows/build
 
 *Para desarrollo* sigue existiendo `Instalar VoiceLab AI.bat`, que instala desde el código con un Python privado.
 
-**Micrófono virtual:** instala [VB-CABLE](https://vb-audio.com/Cable/) (gratis, firmado por Microsoft), reinicia y, opcionalmente, renombra «CABLE Output» a **VoiceLab AI Microphone** (*Ajustes → Abrir panel de Sonido*). En Discord, Steam o el navegador elige ese micrófono.
+**Micrófono virtual:** instala [VB-CABLE](https://vb-audio.com/Cable/) (gratis, firmado por Microsoft), reinicia y, opcionalmente, renombra «CABLE Output» a **VoiceLab AI Microphone** (*Ajustes → Abrir panel de Sonido*).
+
+**En todas las apps** (activado por defecto, interruptor en la ruta *Micrófono virtual*): mientras el modulador está encendido, VoiceLab pone el micrófono virtual como **micrófono predeterminado de Windows** (consola, multimedia y comunicaciones). Así lo reciben los juegos, los editores de vídeo, el navegador y cualquier programa que use «el micrófono predeterminado», sin configurar nada en cada uno. VoiceLab sigue escuchando tu micrófono real. Al parar el modulador o cerrar la app se restaura el que tenías (también si la app se cerró de golpe: al volver a abrirla). Notas: los programas en los que elegiste un micrófono concreto (Discord, OBS…) siguen con ese, así que ahí elige «CABLE Output»; algunos juegos solo miran el micrófono al arrancar: ábrelos con el modulador ya encendido.
 
 **IA (una sola vez):** *Ajustes → Motor de IA y modelos* → «Instalar ahora» (ONNX Runtime con DirectML para tu Radeon) y descarga los modelos que quieras:
 - **Chatterbox Multilingual** (~3,2 GB, exportación ONNX oficial de onnx-community): texto a voz y clonación instantánea, 23 idiomas. Comprobado en Windows transcribiendo el resultado con Whisper (español: 97–100 % de coincidencia con el texto). La exportación comunitaria «V3» que usaban versiones anteriores no lee bien el texto: si la tienes, la app ofrece borrarla.
