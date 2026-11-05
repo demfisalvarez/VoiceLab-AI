@@ -144,11 +144,17 @@ class Exportable:
         return Infer(net_g)
 
 
-def export_onnx(net_g, path: Path) -> None:
-    import copy
+def new_generator():
+    from rvc.models import SynthesizerTrnMs768NSFsid
+    d = HP["data"]
+    return SynthesizerTrnMs768NSFsid(d["filter_length"] // 2 + 1, SEGMENT // HOP, **HP["model"], is_half=False, sr=SR)
 
+
+def export_onnx(net_g, path: Path) -> None:
     import torch
-    g = copy.deepcopy(net_g).float().eval()
+    g = new_generator()                        # copia limpia (deepcopy no admite weight_norm tras entrenar)
+    g.load_state_dict(net_g.state_dict())
+    g = g.float().eval()
     g.dec.remove_weight_norm()
     g.flow.remove_weight_norm()
     if hasattr(g, "enc_q"):
@@ -185,7 +191,7 @@ def main() -> int:
     ap.add_argument("--minutes", type=float, default=60.0, help="tiempo de entrenamiento (si no hay --steps)")
     ap.add_argument("--steps", type=int, default=0)
     ap.add_argument("--threads", type=int, default=max(1, (os.cpu_count() or 2) // 2 - 1))
-    ap.add_argument("--batch", type=int, default=8)
+    ap.add_argument("--batch", type=int, default=4, help="como RVC: más pasos por hora en la CPU")
     ap.add_argument("--max-frames", type=int, default=200, help="tramas por ejemplo (2 s): más rápido en CPU")
     ap.add_argument("--save-every", type=float, default=600.0, help="segundos entre puntos de control")
     ap.add_argument("--extend", action="store_true", help="seguir entrenando «--minutes» más tras terminar")
@@ -202,7 +208,7 @@ def main() -> int:
         from rvc import commons
         from rvc.losses import discriminator_loss, feature_loss, generator_loss, kl_loss
         from rvc.mel_processing import mel_spectrogram_torch, spec_to_mel_torch
-        from rvc.models import MultiPeriodDiscriminatorV2, SynthesizerTrnMs768NSFsid
+        from rvc.models import MultiPeriodDiscriminatorV2
 
         torch.set_num_threads(max(1, args.threads))
         random.seed(1234)
@@ -211,8 +217,7 @@ def main() -> int:
         if not data.items:
             raise RuntimeError("No hay trozos de voz suficientes para entrenar.")
         d = HP["data"]
-        net_g = SynthesizerTrnMs768NSFsid(d["filter_length"] // 2 + 1, SEGMENT // HOP, **HP["model"],
-                                          is_half=False, sr=SR)
+        net_g = new_generator()
         net_d = MultiPeriodDiscriminatorV2(False)
         tr = HP["train"]
         optim_g = torch.optim.AdamW(net_g.parameters(), tr["learning_rate"], betas=tr["betas"], eps=tr["eps"])

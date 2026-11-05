@@ -81,11 +81,11 @@ def analyze(x: np.ndarray, sr: int) -> dict:
     if speech_s < 10:
         tier, label = "insufficient", "Insuficiente: hacen falta al menos 10 segundos de voz"
     elif speech_s < 300:
-        tier, label = "instant", "Suficiente para un perfil de IA instantánea (10–30 s recomendado)"
+        tier, label = "instant", "Suficiente para IA instantánea; para entrenar una voz fiel, mejor 5–10 min o más"
     elif speech_s < 600:
-        tier, label = "rvc_basic", "Suficiente para un modelo RVC básico (5–10 min)"
+        tier, label = "rvc_basic", "Suficiente para entrenar una voz fiel (con 10 min o más queda aún mejor)"
     else:
-        tier, label = "rvc_good", "Suficiente para un modelo RVC de calidad (10 min o más)"
+        tier, label = "rvc_good", "Ideal para entrenar una voz fiel (10 min o más)"
     return {
         "total_s": round(total_s, 2), "speech_s": round(speech_s, 2),
         "speech_ratio": round(speech_s / total_s, 3) if total_s else 0.0,

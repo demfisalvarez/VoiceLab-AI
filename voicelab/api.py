@@ -676,8 +676,8 @@ class MediaApiMixin:
                  "created_with": "VoiceLab AI"})
             d = self._profiles.path(prof["id"])
             mediaio.save_wav(d / "reference.wav", cleaned[a:b], SR)
-            if info["tier"] in ("rvc_basic", "rvc_good"):
-                mediaio.save_wav(d / "material.wav", cleaned, SR)   # material para entrenar RVC
+            if info["speech_s"] >= 60:                          # material para «Entrenar voz fiel»
+                mediaio.save_wav(d / "material.wav", cleaned, SR)
             if data.get("avatar"):
                 self._profiles.set_avatar(prof["id"], data["avatar"])
             progress(1.0)

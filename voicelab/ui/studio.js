@@ -137,7 +137,7 @@
       '<div class="kpi"><b class="num">' + (a.f0_median ? Math.round(a.f0_median) + ' Hz' : '—') + '</b><span>tono medio' + (a.f0_p10 ? ' (' + Math.round(a.f0_p10) + '–' + Math.round(a.f0_p90) + ')' : '') + '</span></div>' +
       '<div class="kpi"><b class="num">' + a.level_db.toFixed(0) + ' dB</b><span>nivel de la voz</span></div></div>' +
       '<div class="suff"><div class="suff-bar"><i style="width:' + pct + '%"></i><em style="left:' + (10 / 6) + '%"></em><em style="left:50%"></em><em style="left:100%"></em></div>' +
-      '<div class="suff-labels small muted"><span>10 s · instantánea</span><span>5 min · RVC básico</span><span>10 min · RVC calidad</span></div></div>' +
+      '<div class="suff-labels small muted"><span>10 s · instantánea</span><span>5 min · voz fiel</span><span>10 min · voz fiel ideal</span></div></div>' +
       '<div class="notice ' + (a.tier === 'insufficient' ? 'err' : 'ok') + '">' + iconHTML(a.tier === 'insufficient' ? 'alert' : 'check') + '<div><b>' + VL.esc(a.tier_label) + '.</b></div></div>' +
       a.warnings.map((w) => '<div class="notice warn">' + iconHTML('alert') + '<div>' + VL.esc(w) + '</div></div>').join('');
     $('#clone-step3').hidden = a.tier === 'insufficient';

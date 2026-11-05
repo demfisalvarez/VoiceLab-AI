@@ -31,7 +31,7 @@ from voicelab.audio import mediaio  # noqa: E402
 
 OUT = R.OUT
 SR = 48000
-STEPS = int(sys.argv[2]) if len(sys.argv) > 2 else 40
+STEPS = int(sys.argv[2]) if len(sys.argv) > 2 else 24
 REPORT: dict = {"cpu": os.cpu_count()}
 PARAGRAPHS = [
     "The old lighthouse stood at the edge of the cliff for more than a hundred years.",
@@ -86,7 +86,10 @@ def main() -> int:
 
     def run(steps, stop_after=None):
         cmd = rvc_train.trainer_command(wd / "dataset.npz", wd, 0, steps=steps, threads=max(1, (os.cpu_count() or 2)))
-        p = rvc_train.TrainerProcess(cmd, wd, events.append)
+        def on_event(e):
+            events.append(e)
+            print("  entrenador:", e, flush=True)
+        p = rvc_train.TrainerProcess(cmd, wd, on_event)
         if stop_after:
             def stopper():
                 while p.proc.poll() is None:
@@ -114,6 +117,7 @@ def main() -> int:
     assert rc1 == 0 and rc2 == 0 and exported and exported[-1]["step"] == STEPS, REPORT["entreno"]
 
     # ---- el modelo exportado en la app
+    print("Probando el modelo exportado…", flush=True)
     onnx = Path(exported[-1]["path"])
     m = rvc.RVCModel(onnx, prefer_gpu=False)
     x16 = mediaio.resample(a, SR, 16000)
@@ -131,6 +135,7 @@ def main() -> int:
     print(REPORT["modelo"], flush=True)
 
     # ---- en directo (CPU del servidor)
+    print("En directo…", flush=True)
     proc = rvc.RealtimeRVC(m, SR)
     yl = Q.run_realtime(proc, a[: SR * 15])
     proc.close()
