@@ -27,6 +27,9 @@ class Sess:
 
     def run(self, _out, feed):
         self.calls += 1
+        missing = set(self._in) - set(feed)
+        if getattr(self, "strict", False) and missing:          # como ONNX Runtime
+            raise ValueError(f"Required inputs ({sorted(missing)}) are missing")
         return self.fn(feed)
 
 
@@ -174,6 +177,15 @@ def test_realtime_rvc_streams_without_clicks():
     assert step < max_slope * 3, step                      # sin saltos bruscos en los empalmes
     assert int(0.23 * SR) <= proc.latency_samples <= int(0.36 * SR)
     assert proc.underruns <= 1
+
+
+def test_skip_head_model_converts_files_and_detects_rate():
+    m = fake_rvc("webui", 40000, skip=True)
+    m.synth.strict = True
+    assert m.detect_sr() == 40000                       # sin «keep»: se sintetiza todo
+    x = (0.3 * np.sin(2 * np.pi * 220 * np.arange(SR) / SR)).astype(np.float32)
+    y = m.convert(x, SR)
+    assert abs(y.shape[0] - SR) < SR // 50
 
 
 def test_realtime_rvc_low_latency_and_skip_head(monkeypatch):

@@ -129,6 +129,8 @@ class RVCModel:
                 "ds": np.array([sid], np.int64)}
         if "rnd" in self.names:
             feed["rnd"] = np.random.default_rng(seed).standard_normal((1, 192, n)).astype(np.float32)
+        if "skip_head" in self.names:                     # modelos entrenados en la app: por defecto, todo
+            feed["skip_head"] = np.zeros(1, np.int64)
         return feed
 
     def detect_sr(self) -> int:
