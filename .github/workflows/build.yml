@@ -211,6 +211,14 @@ jobs:
         run: |
           f=$(ls VoiceLabAI-Setup-*.exe | head -1)
           v=${f#VoiceLabAI-Setup-}; v=${v%.exe}
-          gh release create "v$v" "$f" --repo "$GITHUB_REPOSITORY" --title "VoiceLab AI $v" \
-            --notes "Instalador para Windows 10/11. Descarga **$f**, ábrelo y sigue el asistente. No necesitas Python." \
+          m="https://github.com/$GITHUB_REPOSITORY/blob/main/docs/manual"
+          cat > notas.md <<EOF
+          Instalador para Windows 10/11 (64 bits). Descarga **$f**, ábrelo y sigue el asistente: no necesita Python ni permisos de administrador.
+
+          - Si Windows avisa («Windows protegió tu PC»), pulsa *Más información → Ejecutar de todas formas* (el instalador no está firmado con un certificado de pago).
+          - Para usar tu voz en Discord, juegos y otros programas instala también [VB-CABLE](https://vb-audio.com/Cable/) (gratuito) y reinicia.
+
+          **Manual:** [Español]($m/es.md) · [English]($m/en.md) · [Français]($m/fr.md) · [Italiano]($m/it.md) · [Português]($m/pt.md) · [Русский]($m/ru.md) · [中文]($m/zh.md) · [日本語]($m/ja.md)
+          EOF
+          gh release create "v$v" "$f" --repo "$GITHUB_REPOSITORY" --title "VoiceLab AI $v" --notes-file notas.md \
             || gh release upload "v$v" "$f" --repo "$GITHUB_REPOSITORY" --clobber
