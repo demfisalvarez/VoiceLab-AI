@@ -2,6 +2,15 @@
 
 Estudio de voz para Windows 10/11: modulador en tiempo real con micrófono virtual, efectos, clonación de voz con IA local, conversión de voz en directo (RVC y voz instantánea sin entrenar), texto a voz, editor de audio y biblioteca de perfiles. Sin suscripciones: todo se ejecuta en tu equipo.
 
+## 📖 Manual de usuario
+
+| | | | |
+|---|---|---|---|
+| [Español](docs/manual/es.md) | [English](docs/manual/en.md) | [Français](docs/manual/fr.md) | [Italiano](docs/manual/it.md) |
+| [Português](docs/manual/pt.md) | [Русский](docs/manual/ru.md) | [中文](docs/manual/zh.md) | [日本語](docs/manual/ja.md) |
+
+![VoiceLab AI: modulador en tiempo real](docs/manual/img/02-modulador.png)
+
 > Estado detallado de cada fase y de lo verificado: final de **ARQUITECTURA.md**.
 
 ## Instalar
