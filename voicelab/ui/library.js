@@ -67,7 +67,7 @@
           '<button class="star' + (p.favorite ? ' on' : '') + '" data-act="fav" title="Favorito" aria-label="Favorito">' + iconHTML('star') + '</button>' +
         '</div>' +
         '<p class="lib-desc">' + (p.description ? VL.esc(p.description) : '<span class="muted">Sin descripción</span>') + '</p>' +
-        '<div class="lib-date muted small">Creado el ' + new Date(p.created).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }) + (p.has_reference ? ' · con audio de referencia' : '') + '</div>' +
+        '<div class="lib-date muted small">Creado el ' + new Date(p.created).toLocaleDateString((window.VL_I18N && VL_I18N.lang) || 'es', { day: 'numeric', month: 'long', year: 'numeric' }) + (p.has_reference ? '<span> · con audio de referencia</span>' : '') + '</div>' +
         '<div class="lib-actions">' +
           '<button class="btn sm' + (p.id === active ? '' : ' primary') + '" data-act="use">' + (p.id === active ? 'En uso' : 'Usar') + '</button>' +
           '<button class="btn sm ghost" data-act="edit" title="Editar">' + iconHTML('edit') + '</button>' +

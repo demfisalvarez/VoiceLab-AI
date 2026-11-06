@@ -25,11 +25,38 @@ MinVersion=10.0
 AppMutex=VoiceLabAI_SingleInstance
 CloseApplications=yes
 
+ShowLanguageDialog=auto
+LanguageDetectionMethod=uilanguage
+
 [Languages]
+; El asistente sale en el idioma de Windows (si no está, en inglés).
+Name: "en"; MessagesFile: "compiler:Default.isl"
 Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "fr"; MessagesFile: "compiler:Languages\French.isl"
+Name: "it"; MessagesFile: "compiler:Languages\Italian.isl"
+Name: "pt"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
+Name: "ja"; MessagesFile: "compiler:Languages\Japanese.isl"
+; El chino simplificado es una traducción «no oficial» de Inno Setup: el flujo de CI la descarga
+; de github.com/jrsoftware/issrc; si no está, el instalador sale sin chino (en inglés).
+#if FileExists(AddBackslash(SourcePath) + "ChineseSimplified.isl")
+Name: "zh"; MessagesFile: "ChineseSimplified.isl"
+#endif
+
+[CustomMessages]
+en.OpenCable=Open the VB-CABLE page (free virtual microphone)
+es.OpenCable=Abrir la página de VB-CABLE (micrófono virtual gratuito)
+fr.OpenCable=Ouvrir la page de VB-CABLE (micro virtuel gratuit)
+it.OpenCable=Apri la pagina di VB-CABLE (microfono virtuale gratuito)
+pt.OpenCable=Abrir a página do VB-CABLE (microfone virtual gratuito)
+ru.OpenCable=Открыть страницу VB-CABLE (бесплатный виртуальный микрофон)
+ja.OpenCable=VB-CABLE のページを開く（無料の仮想マイク）
+#if FileExists(AddBackslash(SourcePath) + "ChineseSimplified.isl")
+zh.OpenCable=打开 VB-CABLE 页面（免费的虚拟麦克风）
+#endif
 
 [Tasks]
-Name: "desktopicon"; Description: "Crear un acceso directo en el escritorio"; GroupDescription: "Accesos directos:"
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [InstallDelete]
 ; Restos de la instalación antigua con «Instalar VoiceLab AI.bat» (Python a la vista): se sustituyen por el .exe.
@@ -57,8 +84,8 @@ Name: "{group}\VoiceLab AI"; Filename: "{app}\VoiceLab AI.exe"; AppUserModelID: 
 Name: "{userdesktop}\VoiceLab AI"; Filename: "{app}\VoiceLab AI.exe"; AppUserModelID: "VoiceLabAI.Studio"; Tasks: desktopicon
 
 [Run]
-Filename: "https://vb-audio.com/Cable/"; Description: "Abrir la página de VB-CABLE (micrófono virtual gratuito)"; Flags: postinstall shellexec skipifsilent unchecked
-Filename: "{app}\VoiceLab AI.exe"; Description: "Abrir VoiceLab AI"; Flags: postinstall nowait skipifsilent
+Filename: "https://vb-audio.com/Cable/"; Description: "{cm:OpenCable}"; Flags: postinstall shellexec skipifsilent unchecked
+Filename: "{app}\VoiceLab AI.exe"; Description: "{cm:LaunchProgram,VoiceLab AI}"; Flags: postinstall nowait skipifsilent
 
 [UninstallDelete]
 ; Componentes que la app descarga después (voz en directo): se borran al desinstalar.

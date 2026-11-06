@@ -1,6 +1,6 @@
 """VoiceLab AI — estudio de voz para Windows."""
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 APP_NAME = "VoiceLab AI"
 APP_ID = "VoiceLabAI"
 

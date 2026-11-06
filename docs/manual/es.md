@@ -4,7 +4,9 @@
 
 VoiceLab AI es un estudio de voz para Windows: cambia tu voz en tiempo real, clona voces con inteligencia artificial y convierte texto en voz. Todo funciona en tu ordenador, sin suscripciones ni servicios en la nube.
 
-> Este manual corresponde a la versión 0.10. Las capturas usan perfiles y dispositivos de ejemplo.
+> Este manual corresponde a la versión 0.11. Las capturas usan perfiles y dispositivos de ejemplo.
+>
+> **La interfaz está en 8 idiomas** (Español, English, Français, Italiano, Português, Русский, 中文, 日本語). Usa el idioma de Windows automáticamente y puedes cambiarlo en **Ajustes → Idioma de la interfaz**.
 
 ## Índice
 
@@ -292,6 +294,10 @@ También eliges dónde se ejecuta cada cosa:
 
 - **Texto a voz se ejecuta en**: CPU (recomendado) o GPU.
 - **Voces RVC en directo se ejecutan en**: GPU con DirectML (recomendado si tienes tarjeta gráfica) o CPU.
+
+### 10.4 Idioma de la interfaz
+
+La app está en español, inglés, francés, italiano, portugués, ruso, chino y japonés. En **Sistema → Idioma de la interfaz**, **Automático** usa el idioma de Windows (si no está entre los ocho, el inglés). Al cambiarlo, la ventana se recarga al momento; el modulador y tus perfiles no se tocan. El instalador también sale en el idioma de Windows.
 
 ## 11. Usar tu voz en Discord, juegos, OBS y editores de vídeo
 

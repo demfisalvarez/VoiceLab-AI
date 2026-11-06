@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 from pathlib import Path
 import sys
@@ -439,13 +440,24 @@ class Api:
         import webview
         fd = getattr(webview, "FileDialog", None)
         mode = getattr(fd, kind.upper(), None) if fd else getattr(webview, f"{kind.upper()}_DIALOG")
-        kwargs = {"file_types": file_types}
+        kwargs = {"file_types": tuple(self._dialog_label(t) for t in file_types)}
         if save_name:
             kwargs["save_filename"] = save_name
         res = self._window.create_file_dialog(mode, **kwargs)
         if not res:
             return None
         return res if isinstance(res, str) else res[0]
+
+    def _tr(self, text: str) -> str:
+        """Texto en el idioma de la interfaz para lo que Python crea (nombres por defecto, diálogos)."""
+        from . import i18n
+        return i18n.translate(text, i18n.resolve(self._settings.get("ui", "language")))
+
+    def _dialog_label(self, text: str) -> str:
+        """«Audio y vídeo (*.mp3;…)» en el idioma de la interfaz, con el formato que exige pywebview."""
+        out = self._tr(text)
+        out = re.sub(r"\s*（", " (", out).replace("）", ")")
+        return out if re.fullmatch(r"[\w ]+\((\*(?:\.(?:\w+|\*))*(?:;\*\.\w+)*)\)", out) else text
 
     def _open_dialog(self, file_type: str):
         return self._dialog("open", (file_type, "Todos los archivos (*.*)"))
@@ -554,7 +566,7 @@ class MediaApiMixin:
         if op == "split":
             return self._job("Dividir", lambda p: ws.split(iid, args.get("at", 0)))
         if op == "duplicate":
-            return self._job("Duplicar", lambda p: ws.create(ws.load(iid), ws.meta(iid)["name"] + " (copia)", "edit", iid))
+            return self._job("Duplicar", lambda p: ws.create(ws.load(iid), ws.meta(iid)["name"] + " " + self._tr("(copia)"), "edit", iid))
         labels = {"effects": "Aplicando efectos", "denoise": "Eliminando ruido", "tempo": "Cambiando el tempo",
                   "remove_silences": "Eliminando silencios"}
         return self._job(labels.get(op, "Editando"), lambda p: ws.apply(iid, op, args, p))
@@ -640,7 +652,7 @@ class MediaApiMixin:
         audio = self._recorder.stop()
         if audio.shape[0] < 4800:
             return self._fail("La grabación es demasiado corta.")
-        meta = self._ws().create(audio, name or time_label("Grabación"), "recording")
+        meta = self._ws().create(audio, name or time_label(self._tr("Grabación")), "recording")
         return self._ok(item=meta)
 
     # ------------------------------------------------ crear perfil de voz IA
@@ -872,7 +884,7 @@ class AIApiMixin:
         sr = model.sr
         model.close()
         if prof is None:
-            prof = self._profiles.create(f"{src['name']} (fiel)", "rvc",
+            prof = self._profiles.create(f"{src['name']} {self._tr('(fiel)')}", "rvc",
                                          f"Voz entrenada en VoiceLab a partir de «{src['name']}».", src.get("folder", ""), {})
         d = self._profiles.path(prof["id"]) / "model"
         d.mkdir(exist_ok=True)
@@ -1078,7 +1090,7 @@ class AIApiMixin:
                 out = model.convert(ws.load(iid), SR, float(semitones), progress)
             finally:
                 model.close()
-            return ws.create(out, ws.meta(iid)["name"] + " (voz convertida)", "edit", iid)
+            return ws.create(out, ws.meta(iid)["name"] + " " + self._tr("(voz convertida)"), "edit", iid)
         return self._job("Convirtiendo la voz con IA", work)
 
 

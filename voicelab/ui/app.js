@@ -640,12 +640,34 @@
     renderRoadmap();
     renderStatus();
     renderChecklist();
+    if (setupLanguage()) return;
     showPage(S.settings.ui.last_page || 'home', false);
     $('#boot').classList.add('hide');
     call('ui_ready', Math.round(performance.now()));
     requestAnimationFrame(frame);
     pollLoop();
     document.dispatchEvent(new CustomEvent('vl:ready'));
+  }
+
+  // ======================================================== idioma
+  // Devuelve true si hay que recargar porque el idioma guardado en los ajustes
+  // no es el que se ha aplicado (por ejemplo, tras reinstalar).
+  function setupLanguage() {
+    const I = window.VL_I18N;
+    const sel = $('#ui-lang');
+    if (!I || !sel) return false;
+    const want = (S.settings.ui && S.settings.ui.language) || 'auto';
+    if (!I.forced && I.pref !== want && I.remember(want)) { location.reload(); return true; }
+    const auto = I.names[I.resolve('auto')] || I.names.en;
+    sel.innerHTML = '<option value="auto">' + esc(I.t('Automático (' + auto + ')')) + '</option>' +
+      I.supported.map(c => '<option value="' + c + '">' + esc(I.names[c]) + '</option>').join('');
+    sel.value = want;
+    sel.addEventListener('change', async () => {
+      const v = sel.value;
+      await sendSetting('ui.language', v, { quiet: true });
+      if (I.remember(v)) location.reload();
+    });
+    return false;
   }
 
   function applyResponse(res, quiet) {
@@ -659,6 +681,8 @@
     return res;
   }
 
-  window.VL = { S, call, toast, esc, showPage, applyResponse, sendSetting, $, $$ };
+  // Traducción para lo que no pasa por el DOM tal cual (opciones de <select>, fechas…).
+  const t = (s) => (window.VL_I18N ? window.VL_I18N.t(s) : s);
+  window.VL = { S, call, toast, esc, showPage, applyResponse, sendSetting, t, $, $$ };
   document.addEventListener('DOMContentLoaded', boot);
 })();

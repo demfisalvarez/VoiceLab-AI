@@ -35,8 +35,12 @@ def app(port=8766, prepare=None, extra_env=None):
             proc.kill()
 
 
-def open_page(p, url, errors, scale=1):
-    page = p.chromium.launch().new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=scale)
+def open_page(p, url, errors, scale=1, lang="es"):
+    # Las pruebas buscan los textos en español: se fija el idioma de la interfaz.
+    page = p.chromium.launch().new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=scale,
+                                        locale="es-ES")
+    if lang:
+        url += ("&" if "?" in url else "?") + "lang=" + lang
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.on("dialog", lambda d: d.accept())

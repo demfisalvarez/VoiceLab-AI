@@ -205,7 +205,7 @@
     $('#ed-list').innerHTML = r.items.length ? r.items.map((i) =>
       '<div class="ed-item' + (state.editor && state.editor.id === i.id ? ' active' : '') + '" data-open="' + i.id + '">' +
       '<input type="checkbox" data-check="' + i.id + '"' + (state.checked.has(i.id) ? ' checked' : '') + ' aria-label="Seleccionar para unir">' +
-      '<div style="min-width:0"><div class="ed-item-name">' + VL.esc(i.name) + '</div><div class="small muted">' + (kinds[i.kind] || '') + ' · ' + fmtT(i.duration) + '</div></div></div>').join('')
+      '<div style="min-width:0"><div class="ed-item-name">' + VL.esc(i.name) + '</div><div class="small muted">' + VL.esc(VL.t(kinds[i.kind] || '')) + ' · ' + fmtT(i.duration) + '</div></div></div>').join('')
       : '<div class="small muted" style="padding:8px 2px">Sin audios todavía.</div>';
     const recs = r.items.filter((i) => i.kind === 'recording');
     $('#rec-list').innerHTML = recs.length ? recs.map((i) =>

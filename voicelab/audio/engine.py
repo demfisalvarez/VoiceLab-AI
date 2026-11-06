@@ -94,19 +94,21 @@ class EngineConfig:
 def explain_stream_error(exc: Exception, what: str, device: str | None, sample_rate: int) -> str:
     """Traduce un error de PortAudio a un mensaje comprensible."""
     msg = str(exc).lower()
-    dev = f"«{device}»" if device else ""
+    # Un solo hueco para «el micrófono «X»»: la interfaz traduce la frase y el sujeto por separado.
+    subject = f"{what} «{device}»" if device else what
+    first = subject[:1].upper() + subject[1:]
     if "invalid sample rate" in msg or "sample rate" in msg:
-        return (f"{what.capitalize()} {dev} no admite {sample_rate} Hz. Prueba con otra frecuencia "
+        return (f"{first} no admite {sample_rate} Hz. Prueba con otra frecuencia "
                 "de muestreo en Ajustes o usa el controlador WASAPI.")
     if "invalid number of channels" in msg:
-        return f"{what.capitalize()} {dev} no admite la configuración de canales solicitada."
+        return f"{first} no admite la configuración de canales solicitada."
     if "invalid device" in msg or "device unavailable" in msg or "no such device" in msg:
-        return (f"No se encuentra {what} {dev}. Puede que se haya desconectado: pulsa "
+        return (f"No se encuentra {subject}. Puede que se haya desconectado: pulsa "
                 "«Actualizar dispositivos» en Ajustes.")
     if "unanticipated host error" in msg or "busy" in msg or "exclusive" in msg:
-        return (f"Windows no ha permitido abrir {what} {dev}. Puede que otra aplicación lo esté "
+        return (f"Windows no ha permitido abrir {subject}. Puede que otra aplicación lo esté "
                 "usando en modo exclusivo o que se haya desconectado.")
-    return f"No se pudo abrir {what} {dev}: {exc}"
+    return f"No se pudo abrir {subject}: {exc}"
 
 
 def _extra_settings(sd, hostapi: str | None):

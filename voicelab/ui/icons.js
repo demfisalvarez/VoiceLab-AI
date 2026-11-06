@@ -9,6 +9,7 @@
     tts: '<path d="M3 7V5h11v2"/><path d="M8.5 5v14"/><path d="M6 19h5"/><path d="M17 9.5a3.5 3.5 0 0 1 0 5"/><path d="M19.5 7a7 7 0 0 1 0 10"/>',
     editor: '<path d="M3 12h1"/><path d="M6.5 8v8"/><path d="M10 4v16"/><path d="M13.5 9v6"/><path d="M17 6v12"/><path d="M20.5 10v4"/>',
     sliders: '<path d="M4 6h9"/><path d="M19 6h1"/><path d="M4 12h3"/><path d="M13 12h7"/><path d="M4 18h11"/><path d="M21 18h-0"/><circle cx="16" cy="6" r="2.5"/><circle cx="10" cy="12" r="2.5"/><circle cx="18" cy="18" r="2.5"/>',
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/>',
     power: '<path d="M12 3v8"/><path d="M6.6 6.6a8 8 0 1 0 10.8 0"/>',
     chevron: '<path d="m9 6 6 6-6 6"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',

@@ -110,6 +110,8 @@ jobs:
       - name: Instalador (Inno Setup)
         run: |
           choco install innosetup -y --no-progress
+          # Traducción china (no oficial) del asistente de Inno Setup; si no se descarga, se compila sin chino.
+          try { Invoke-WebRequest "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/ChineseSimplified.isl" -OutFile build\ChineseSimplified.isl -TimeoutSec 60 } catch { Write-Warning "Sin ChineseSimplified.isl: $_" }
           $env:VL_VERSION = "${{ steps.ver.outputs.version }}"
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" build\installer.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC falló" }
@@ -201,6 +203,10 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publicar)
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src
+          sparse-checkout: build
       - uses: actions/download-artifact@v4
         with:
           name: VoiceLabAI-Setup
@@ -213,12 +219,25 @@ jobs:
           v=${f#VoiceLabAI-Setup-}; v=${v%.exe}
           m="https://github.com/$GITHUB_REPOSITORY/blob/main/docs/manual"
           cat > notas.md <<EOF
-          Instalador para Windows 10/11 (64 bits). Descarga **$f**, ábrelo y sigue el asistente: no necesita Python ni permisos de administrador.
+          **Español** — Instalador para Windows 10/11 (64 bits): descarga **$f**, ábrelo y sigue el asistente (no necesita Python ni permisos de administrador). Si Windows avisa («Windows protegió tu PC»), pulsa *Más información → Ejecutar de todas formas*. Para usar tu voz en Discord, juegos y otros programas instala también [VB-CABLE](https://vb-audio.com/Cable/) (gratis) y reinicia. [Manual]($m/es.md)
 
-          - Si Windows avisa («Windows protegió tu PC»), pulsa *Más información → Ejecutar de todas formas* (el instalador no está firmado con un certificado de pago).
-          - Para usar tu voz en Discord, juegos y otros programas instala también [VB-CABLE](https://vb-audio.com/Cable/) (gratuito) y reinicia.
+          **English** — Installer for Windows 10/11 (64-bit): download **$f**, run it and follow the wizard (no Python or admin rights needed). If Windows SmartScreen warns you, click *More info → Run anyway*. To use your voice in Discord, games and other apps, also install [VB-CABLE](https://vb-audio.com/Cable/) (free) and restart. [User manual]($m/en.md)
 
-          **Manual:** [Español]($m/es.md) · [English]($m/en.md) · [Français]($m/fr.md) · [Italiano]($m/it.md) · [Português]($m/pt.md) · [Русский]($m/ru.md) · [中文]($m/zh.md) · [日本語]($m/ja.md)
+          **Français** — Installateur pour Windows 10/11 (64 bits) : téléchargez **$f**, lancez-le et suivez l'assistant (ni Python ni droits d'administrateur). Si Windows affiche un avertissement, cliquez sur *Informations complémentaires → Exécuter quand même*. Pour utiliser votre voix dans Discord, les jeux et d'autres programmes, installez aussi [VB-CABLE](https://vb-audio.com/Cable/) (gratuit) et redémarrez. [Manuel]($m/fr.md)
+
+          **Italiano** — Programma di installazione per Windows 10/11 (64 bit): scarica **$f**, aprilo e segui la procedura (non servono Python né permessi di amministratore). Se Windows mostra un avviso, fai clic su *Ulteriori informazioni → Esegui comunque*. Per usare la tua voce su Discord, nei giochi e in altri programmi installa anche [VB-CABLE](https://vb-audio.com/Cable/) (gratuito) e riavvia. [Manuale]($m/it.md)
+
+          **Português** — Instalador para Windows 10/11 (64 bits): baixe **$f**, abra e siga o assistente (sem Python nem permissões de administrador). Se o Windows mostrar um aviso, clique em *Mais informações → Executar assim mesmo*. Para usar sua voz no Discord, em jogos e em outros programas, instale também o [VB-CABLE](https://vb-audio.com/Cable/) (gratuito) e reinicie. [Manual]($m/pt.md)
+
+          **Русский** — Установщик для Windows 10/11 (64 бита): скачайте **$f**, запустите и следуйте указаниям мастера (не нужны ни Python, ни права администратора). Если Windows покажет предупреждение, нажмите *Подробнее → Выполнить в любом случае*. Чтобы использовать голос в Discord, играх и других программах, установите также [VB-CABLE](https://vb-audio.com/Cable/) (бесплатно) и перезагрузите ПК. [Руководство]($m/ru.md)
+
+          **中文** — 适用于 Windows 10/11（64 位）的安装程序：下载 **$f**，运行后按向导完成安装（不需要 Python，也不需要管理员权限）。如果 Windows 弹出警告，请点击 *更多信息 → 仍要运行*。要在 Discord、游戏和其他程序中使用你的声音，还需安装免费的 [VB-CABLE](https://vb-audio.com/Cable/) 并重启电脑。[用户手册]($m/zh.md)
+
+          **日本語** — Windows 10/11（64 ビット）用インストーラー：**$f** をダウンロードして実行し、ウィザードに従ってください（Python も管理者権限も不要）。Windows の警告が表示された場合は *詳細情報 → 実行* をクリックします。Discord、ゲーム、その他のアプリで声を使うには、無料の [VB-CABLE](https://vb-audio.com/Cable/) もインストールして再起動してください。[マニュアル]($m/ja.md)
           EOF
+          # Novedades de la versión (si las hay), delante de las instrucciones.
+          if [ -f src/build/novedades.md ]; then
+            { cat src/build/novedades.md; printf '\n## Instalación · Installation\n\n'; cat notas.md; } > n.md && mv n.md notas.md
+          fi
           gh release create "v$v" "$f" --repo "$GITHUB_REPOSITORY" --title "VoiceLab AI $v" --notes-file notas.md \
             || gh release upload "v$v" "$f" --repo "$GITHUB_REPOSITORY" --clobber

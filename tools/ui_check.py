@@ -41,7 +41,8 @@ def main() -> int:
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch()
-            page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=int(os.environ.get("VL_SCALE", "1")))
+            page = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=int(os.environ.get("VL_SCALE", "1")),
+                                    locale="es-ES")
             page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.goto(url)

@@ -1,6 +1,10 @@
-# VoiceLab AI · v0.10.0
+# VoiceLab AI · v0.11.0
+
+**Español** · [English](#english) · [Français](#français) · [Italiano](#italiano) · [Português](#português) · [Русский](#русский) · [中文](#中文) · [日本語](#日本語)
 
 Estudio de voz para Windows 10/11: modulador en tiempo real con micrófono virtual, efectos, clonación de voz con IA local, conversión de voz en directo (RVC y voz instantánea sin entrenar), texto a voz, editor de audio y biblioteca de perfiles. Sin suscripciones: todo se ejecuta en tu equipo.
+
+🌍 **La app, el instalador y el manual están en 8 idiomas** (español, inglés, francés, italiano, portugués, ruso, chino y japonés). La interfaz usa el idioma de Windows y se cambia en *Ajustes → Idioma de la interfaz*.
 
 ## 📖 Manual de usuario
 
@@ -10,6 +14,29 @@ Estudio de voz para Windows 10/11: modulador en tiempo real con micrófono virtu
 | [Português](docs/manual/pt.md) | [Русский](docs/manual/ru.md) | [中文](docs/manual/zh.md) | [日本語](docs/manual/ja.md) |
 
 ![VoiceLab AI: modulador en tiempo real](docs/manual/img/02-modulador.png)
+
+## 🌍 En tu idioma
+
+### English
+VoiceLab AI is a voice studio for Windows 10/11: a real-time voice changer with a virtual microphone (Discord, games, OBS, video editors), effects, local AI voice cloning, live voice conversion (RVC and instant voices without training), text to speech, an audio editor and a profile library. No subscriptions: everything runs on your PC. **Install:** download `VoiceLabAI-Setup-<version>.exe` from [Releases](https://github.com/demfisalvarez/VoiceLab-AI/releases/latest) and follow the wizard (no Python or admin rights needed); for other apps to hear your voice, also install [VB-CABLE](https://vb-audio.com/Cable/) (free). The interface follows your Windows language; change it in *Settings → Interface language*. 📖 [User manual](docs/manual/en.md)
+
+### Français
+VoiceLab AI est un studio vocal pour Windows 10/11 : modulateur en temps réel avec micro virtuel (Discord, jeux, OBS, éditeurs vidéo), effets, clonage de voix par IA locale, conversion de voix en direct (RVC et voix instantanées sans entraînement), synthèse vocale, éditeur audio et bibliothèque de profils. Sans abonnement : tout s'exécute sur votre PC. **Installation :** téléchargez `VoiceLabAI-Setup-<version>.exe` dans les [Releases](https://github.com/demfisalvarez/VoiceLab-AI/releases/latest) et suivez l'assistant (ni Python ni droits d'administrateur) ; pour que les autres apps entendent votre voix, installez aussi [VB-CABLE](https://vb-audio.com/Cable/) (gratuit). L'interface suit la langue de Windows ; changez-la dans *Réglages → Langue de l'interface*. 📖 [Manuel d'utilisation](docs/manual/fr.md)
+
+### Italiano
+VoiceLab AI è uno studio vocale per Windows 10/11: modulatore in tempo reale con microfono virtuale (Discord, giochi, OBS, editor video), effetti, clonazione vocale con IA locale, conversione della voce in diretta (RVC e voci istantanee senza addestramento), sintesi vocale, editor audio e libreria di profili. Senza abbonamenti: tutto funziona sul tuo PC. **Installazione:** scarica `VoiceLabAI-Setup-<versione>.exe` dalle [Releases](https://github.com/demfisalvarez/VoiceLab-AI/releases/latest) e segui la procedura (non servono Python né permessi di amministratore); perché le altre app sentano la tua voce, installa anche [VB-CABLE](https://vb-audio.com/Cable/) (gratuito). L'interfaccia segue la lingua di Windows; puoi cambiarla in *Impostazioni → Lingua dell'interfaccia*. 📖 [Manuale utente](docs/manual/it.md)
+
+### Português
+VoiceLab AI é um estúdio de voz para Windows 10/11: modulador em tempo real com microfone virtual (Discord, jogos, OBS, editores de vídeo), efeitos, clonagem de voz com IA local, conversão de voz ao vivo (RVC e vozes instantâneas sem treinamento), texto para fala, editor de áudio e biblioteca de perfis. Sem assinaturas: tudo roda no seu PC. **Instalação:** baixe `VoiceLabAI-Setup-<versão>.exe` em [Releases](https://github.com/demfisalvarez/VoiceLab-AI/releases/latest) e siga o assistente (sem Python nem permissões de administrador); para que outros apps ouçam sua voz, instale também o [VB-CABLE](https://vb-audio.com/Cable/) (gratuito). A interface segue o idioma do Windows; troque em *Configurações → Idioma da interface*. 📖 [Manual do usuário](docs/manual/pt.md)
+
+### Русский
+VoiceLab AI — голосовая студия для Windows 10/11: модулятор голоса в реальном времени с виртуальным микрофоном (Discord, игры, OBS, видеоредакторы), эффекты, клонирование голоса локальным ИИ, преобразование голоса вживую (RVC и мгновенные голоса без обучения), синтез речи, аудиоредактор и библиотека профилей. Без подписок: всё работает на вашем ПК. **Установка:** скачайте `VoiceLabAI-Setup-<версия>.exe` в разделе [Releases](https://github.com/demfisalvarez/VoiceLab-AI/releases/latest) и следуйте указаниям мастера (не нужны ни Python, ни права администратора); чтобы другие приложения слышали ваш голос, установите также [VB-CABLE](https://vb-audio.com/Cable/) (бесплатно). Интерфейс следует языку Windows; сменить его можно в *Настройки → Язык интерфейса*. 📖 [Руководство пользователя](docs/manual/ru.md)
+
+### 中文
+VoiceLab AI 是一款适用于 Windows 10/11 的语音工作室：带虚拟麦克风的实时变声器（Discord、游戏、OBS、视频编辑器）、音效、本地 AI 声音克隆、实时声音转换（RVC 和免训练的即时声音）、文本转语音、音频编辑器和声音配置库。无需订阅：一切都在你的电脑上运行。**安装：**从 [Releases](https://github.com/demfisalvarez/VoiceLab-AI/releases/latest) 下载 `VoiceLabAI-Setup-<版本>.exe`，按向导完成安装（不需要 Python，也不需要管理员权限）；要让其他应用听到你的声音，还需安装免费的 [VB-CABLE](https://vb-audio.com/Cable/)。界面默认跟随 Windows 语言，可在 *设置 → 界面语言* 中更改。📖 [用户手册](docs/manual/zh.md)
+
+### 日本語
+VoiceLab AI は Windows 10/11 用のボイススタジオです。仮想マイク付きのリアルタイム・ボイスチェンジャー（Discord、ゲーム、OBS、動画編集ソフト）、エフェクト、ローカルAIによる声のクローン、リアルタイム音声変換（RVC と学習不要のインスタントボイス）、テキスト読み上げ、オーディオエディター、プロファイルライブラリを備えています。サブスクリプション不要で、すべてお使いのPC上で動作します。**インストール：**[Releases](https://github.com/demfisalvarez/VoiceLab-AI/releases/latest) から `VoiceLabAI-Setup-<バージョン>.exe` をダウンロードし、ウィザードに従ってください（Python も管理者権限も不要）。他のアプリに声を届けるには、無料の [VB-CABLE](https://vb-audio.com/Cable/) もインストールします。画面は Windows の言語に合わせて表示され、*設定 → インターフェースの言語* で変更できます。📖 [ユーザーマニュアル](docs/manual/ja.md)
 
 > Estado detallado de cada fase y de lo verificado: final de **ARQUITECTURA.md**.
 

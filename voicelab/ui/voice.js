@@ -115,7 +115,7 @@
     });
     const sel = $('#profile-quick');
     sel.innerHTML = '<option value="">— Sin perfil (ajustes actuales) —</option>' +
-      profiles.map((x) => '<option value="' + x.id + '"' + (x.id === v.profile_id ? ' selected' : '') + '>' + VL.esc(x.name) + ' · ' + VL.esc(x.type_label) + '</option>').join('');
+      profiles.map((x) => '<option value="' + x.id + '"' + (x.id === v.profile_id ? ' selected' : '') + '>' + VL.esc(x.name) + ' · ' + VL.esc(VL.t(x.type_label)) + '</option>').join('');
   }
 
   async function loadProfiles() {

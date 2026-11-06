@@ -184,6 +184,17 @@ Principios:
 - **La IA en tiempo real irá en un proceso separado** (Fase 4) para que la inferencia no compita con el audio por el GIL de Python.
 - **Todo local:** ajustes, perfiles y modelos en `%APPDATA%\VoiceLabAI`.
 
+### 7.1 Idiomas de la interfaz (v0.11)
+
+La interfaz se escribe en español y se traduce en el propio navegador: español, inglés, francés, italiano, portugués (Brasil), ruso, chino simplificado y japonés.
+
+- `ui/i18n.js` carga `ui/locales/<idioma>.js` antes de pintar la ventana. Cada diccionario usa como clave el texto original en español. Traduce los nodos de texto y los atributos visibles (`title`, `placeholder`, `aria-label`, `alt`) al arrancar y cada vez que cambia el DOM (MutationObserver). También traduce `confirm`/`prompt`/`alert`. Lo que el usuario escribe (`textarea`) y las zonas `translate="no"` no se tocan.
+- Las claves con `{}` son patrones: «Cálculo {} ms por bloque de {} ms» reconoce el texto con cualquier valor (`{1}`, `{2}`… para reordenar). Lo que va dentro de cada hueco también se traduce si se conoce, por ejemplo un error de Python dentro de «No se pudo preparar el motor: {}». Por eso los mensajes de Python se escriben en español y la interfaz los traduce sin tocar la API.
+- `tools/i18n_extract.py` saca las claves: HTML, concatenaciones de JS convertidas en patrones, f-strings de Python y diccionarios de etiquetas. Con `--missing` lista lo que falta por traducir. `tests/test_i18n.py` comprueba que cada idioma tiene todas las claves y los mismos huecos, y prueba el traductor con Node. `tools/i18n_check.py` recorre la app en cada idioma y avisa de textos que siguen en español.
+- Ajuste `ui.language`: `auto` (idioma de Windows; si no es uno de los ocho, inglés) o un código. Se recuerda también en `localStorage` para aplicarlo antes del primer pintado. `voicelab/i18n.py` usa los mismos diccionarios para lo que Python muestra fuera de la página: filtros de los diálogos de archivo y nombres por defecto («Grabación…», «(copia)»).
+- El instalador (Inno Setup) sale en el idioma de Windows. El chino simplificado es una traducción no oficial de Inno Setup: se descarga en CI y, si falla, el instalador sale sin él.
+- El manual tiene capturas en cada idioma (`tools/manual_shots.py <idioma>` → `docs/manual/img/<idioma>/*.webp`).
+
 ---
 
 ## 8. Latencias esperadas

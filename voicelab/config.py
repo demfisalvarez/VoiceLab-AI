@@ -115,6 +115,8 @@ SCHEMA: dict[str, dict[str, tuple[Any, Callable[[Any], Any]]]] = {
     "ui": {
         "last_page": ("home", _choice(PAGES)),
         "monitor_warning_ack": (False, _bool),
+        # idioma de la interfaz; «auto» = el de Windows (si no está, inglés)
+        "language": ("auto", _choice(("auto", "es", "en", "fr", "it", "pt", "ru", "zh", "ja"))),
         "updates_url": ("", lambda v: "" if not v else (str(v)[:300] if str(v).startswith("https://") else (_ for _ in ()).throw(ValueError("https")))),
     },
 }

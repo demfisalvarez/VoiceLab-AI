@@ -10,3 +10,4 @@ ci-out/
 registros/
 resultados/
 *.part
+build/ChineseSimplified.isl

@@ -6,6 +6,7 @@
   <title>VoiceLab AI</title>
   <link rel="icon" href="assets/logo.svg">
   <link rel="stylesheet" href="styles.css">
+  <script src="i18n.js"></script>
 </head>
 <body>
 <div class="boot" id="boot">
@@ -430,6 +431,12 @@
               <div class="icon-box green"><i data-icon="cpu"></i></div>
               <div><h3 class="card-title">Sistema</h3><div class="card-desc">Hardware y motores disponibles</div></div>
             </div>
+            <div class="field">
+              <div class="field-label"><i data-icon="globe"></i> Idioma de la interfaz</div>
+              <select id="ui-lang" translate="no"></select>
+              <div class="field-hint">«Automático» usa el idioma de Windows. La app se recarga al cambiarlo.</div>
+            </div>
+            <div class="divider"></div>
             <dl class="kv" id="settings-system"></dl>
             <div class="divider"></div>
             <div class="small muted" id="about"></div>
