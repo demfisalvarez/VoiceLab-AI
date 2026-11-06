@@ -37,10 +37,15 @@ Name: "it"; MessagesFile: "compiler:Languages\Italian.isl"
 Name: "pt"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
 Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "ja"; MessagesFile: "compiler:Languages\Japanese.isl"
-; El chino simplificado es una traducción «no oficial» de Inno Setup: el flujo de CI la descarga
-; de github.com/jrsoftware/issrc; si no está, el instalador sale sin chino (en inglés).
-#if FileExists(AddBackslash(SourcePath) + "ChineseSimplified.isl")
-Name: "zh"; MessagesFile: "ChineseSimplified.isl"
+; El chino simplificado viene con Inno Setup 6.5 o posterior; con versiones anteriores se usa la copia
+; que descarga el flujo de CI (github.com/jrsoftware/issrc). Si no hay ninguna, el instalador sale sin chino.
+#if FileExists(CompilerPath + "Languages\ChineseSimplified.isl")
+#define ZhMessages "compiler:Languages\ChineseSimplified.isl"
+#elif FileExists(AddBackslash(SourcePath) + "ChineseSimplified.isl")
+#define ZhMessages "ChineseSimplified.isl"
+#endif
+#ifdef ZhMessages
+Name: "zh"; MessagesFile: "{#ZhMessages}"
 #endif
 
 [CustomMessages]
@@ -51,7 +56,7 @@ it.OpenCable=Apri la pagina di VB-CABLE (microfono virtuale gratuito)
 pt.OpenCable=Abrir a página do VB-CABLE (microfone virtual gratuito)
 ru.OpenCable=Открыть страницу VB-CABLE (бесплатный виртуальный микрофон)
 ja.OpenCable=VB-CABLE のページを開く（無料の仮想マイク）
-#if FileExists(AddBackslash(SourcePath) + "ChineseSimplified.isl")
+#ifdef ZhMessages
 zh.OpenCable=打开 VB-CABLE 页面（免费的虚拟麦克风）
 #endif
 

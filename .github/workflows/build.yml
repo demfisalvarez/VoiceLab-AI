@@ -110,8 +110,10 @@ jobs:
       - name: Instalador (Inno Setup)
         run: |
           choco install innosetup -y --no-progress
-          # Traducción china (no oficial) del asistente de Inno Setup; si no se descarga, se compila sin chino.
-          try { Invoke-WebRequest "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/ChineseSimplified.isl" -OutFile build\ChineseSimplified.isl -TimeoutSec 60 } catch { Write-Warning "Sin ChineseSimplified.isl: $_" }
+          # Chino del asistente: viene con Inno Setup 6.5+; si la versión instalada es anterior, se descarga.
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\Languages\ChineseSimplified.isl")) {
+            try { Invoke-WebRequest "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/ChineseSimplified.isl" -OutFile build\ChineseSimplified.isl -TimeoutSec 60 } catch { Write-Warning "Sin ChineseSimplified.isl: $_" }
+          }
           $env:VL_VERSION = "${{ steps.ver.outputs.version }}"
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" build\installer.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC falló" }
